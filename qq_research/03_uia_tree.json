@@ -1,0 +1,215 @@
+{
+ "depth": 0,
+ "control_type": "Window",
+ "name": "迷你窗",
+ "auto_id": "",
+ "class_name": "Chrome_WidgetWin_1",
+ "rect": [
+  1329,
+  296,
+  1760,
+  916
+ ],
+ "size": [
+  431,
+  620
+ ],
+ "enabled": true,
+ "offscreen": null,
+ "children": [
+  {
+   "depth": 1,
+   "control_type": "Pane",
+   "name": "",
+   "auto_id": "",
+   "class_name": "Intermediate D3D Window",
+   "rect": [
+    1329,
+    296,
+    1760,
+    916
+   ],
+   "size": [
+    431,
+    620
+   ],
+   "enabled": false,
+   "offscreen": null,
+   "children": []
+  },
+  {
+   "depth": 1,
+   "control_type": "Pane",
+   "name": "迷你窗",
+   "auto_id": "",
+   "class_name": "RootView",
+   "rect": [
+    1330,
+    296,
+    1763,
+    917
+   ],
+   "size": [
+    433,
+    621
+   ],
+   "enabled": true,
+   "offscreen": null,
+   "children": [
+    {
+     "depth": 2,
+     "control_type": "Pane",
+     "name": "",
+     "auto_id": "",
+     "class_name": "NonClientView",
+     "rect": [
+      1330,
+      296,
+      1763,
+      917
+     ],
+     "size": [
+      433,
+      621
+     ],
+     "enabled": true,
+     "offscreen": null,
+     "children": [
+      {
+       "depth": 3,
+       "control_type": "Pane",
+       "name": "",
+       "auto_id": "",
+       "class_name": "WinFrameView",
+       "rect": [
+        1330,
+        296,
+        1763,
+        917
+       ],
+       "size": [
+        433,
+        621
+       ],
+       "enabled": true,
+       "offscreen": null,
+       "children": [
+        {
+         "depth": 4,
+         "control_type": "Pane",
+         "name": "",
+         "auto_id": "",
+         "class_name": "ClientView",
+         "rect": [
+          1330,
+          296,
+          1763,
+          917
+         ],
+         "size": [
+          433,
+          621
+         ],
+         "enabled": true,
+         "offscreen": null,
+         "children": [
+          {
+           "depth": 5,
+           "control_type": "Pane",
+           "name": "",
+           "auto_id": "",
+           "class_name": "View",
+           "rect": [
+            1330,
+            296,
+            1763,
+            917
+           ],
+           "size": [
+            433,
+            621
+           ],
+           "enabled": true,
+           "offscreen": null,
+           "children": [
+            {
+             "depth": 6,
+             "control_type": "Pane",
+             "name": "",
+             "auto_id": "",
+             "class_name": "View",
+             "rect": [
+              1330,
+              296,
+              1763,
+              917
+             ],
+             "size": [
+              433,
+              621
+             ],
+             "enabled": true,
+             "offscreen": null,
+             "children": [
+              {
+               "depth": 7,
+               "control_type": "Pane",
+               "name": "",
+               "auto_id": "",
+               "class_name": "View",
+               "rect": [
+                1330,
+                296,
+                1763,
+                917
+               ],
+               "size": [
+                433,
+                621
+               ],
+               "enabled": true,
+               "offscreen": null,
+               "children": []
+              },
+              {
+               "depth": 7,
+               "control_type": "Pane",
+               "name": "",
+               "auto_id": "",
+               "class_name": "View",
+               "rect": [
+                1330,
+                296,
+                1763,
+                917
+               ],
+               "size": [
+                433,
+                621
+               ],
+               "enabled": true,
+               "offscreen": null,
+               "children": []
+              }
+             ]
+            }
+           ]
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  }
+ ],
+ "_hwnd": "0x10b1e",
+ "_window_rect": [
+  1329,
+  296,
+  1760,
+  916
+ ],
+ "_dump_seconds": 0.05
+}

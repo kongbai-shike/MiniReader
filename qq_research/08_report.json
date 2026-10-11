@@ -1,0 +1,175 @@
+{
+  "rect": [
+    1480,
+    205,
+    1925,
+    835
+  ],
+  "cursor_orig": [
+    1500,
+    421
+  ],
+  "baseline_toolbar_brightness": 21.33,
+  "baseline_glyph": {
+    "lines": 8,
+    "glyph_h": 23.1,
+    "pitch": 50.7
+  },
+  "hotzone_scan": [
+    {
+      "y": 70,
+      "brightness": 16.88,
+      "open": false
+    },
+    {
+      "y": 75,
+      "brightness": 16.88,
+      "open": false
+    },
+    {
+      "y": 80,
+      "brightness": 16.88,
+      "open": false
+    },
+    {
+      "y": 85,
+      "brightness": 16.88,
+      "open": false
+    },
+    {
+      "y": 90,
+      "brightness": 16.88,
+      "open": false
+    },
+    {
+      "y": 95,
+      "brightness": 16.88,
+      "open": false
+    },
+    {
+      "y": 100,
+      "brightness": 16.86,
+      "open": false
+    },
+    {
+      "y": 105,
+      "brightness": 21.33,
+      "open": false
+    },
+    {
+      "y": 110,
+      "brightness": 21.33,
+      "open": false
+    },
+    {
+      "y": 115,
+      "brightness": 21.33,
+      "open": false
+    },
+    {
+      "y": 120,
+      "brightness": 21.48,
+      "open": false
+    },
+    {
+      "y": 125,
+      "brightness": 21.48,
+      "open": false
+    },
+    {
+      "y": 130,
+      "brightness": 21.48,
+      "open": false
+    },
+    {
+      "y": 135,
+      "brightness": 21.48,
+      "open": false
+    },
+    {
+      "y": 140,
+      "brightness": 21.33,
+      "open": false
+    },
+    {
+      "y": 145,
+      "brightness": 21.33,
+      "open": false
+    },
+    {
+      "y": 150,
+      "brightness": 21.33,
+      "open": false
+    }
+  ],
+  "anim_in": [
+    {
+      "t_ms": 66,
+      "brightness": 16.86
+    },
+    {
+      "t_ms": 114,
+      "brightness": 16.86
+    },
+    {
+      "t_ms": 163,
+      "brightness": 16.86
+    },
+    {
+      "t_ms": 212,
+      "brightness": 16.86
+    },
+    {
+      "t_ms": 316,
+      "brightness": 16.86
+    },
+    {
+      "t_ms": 461,
+      "brightness": 16.86
+    },
+    {
+      "t_ms": 615,
+      "brightness": 16.86
+    },
+    {
+      "t_ms": 913,
+      "brightness": 16.86
+    }
+  ],
+  "anim_out": [
+    {
+      "t_ms": 62,
+      "brightness": 16.86
+    },
+    {
+      "t_ms": 111,
+      "brightness": 16.86
+    },
+    {
+      "t_ms": 168,
+      "brightness": 16.86
+    },
+    {
+      "t_ms": 214,
+      "brightness": 16.86
+    },
+    {
+      "t_ms": 311,
+      "brightness": 16.86
+    },
+    {
+      "t_ms": 464,
+      "brightness": 16.86
+    },
+    {
+      "t_ms": 611,
+      "brightness": 16.86
+    },
+    {
+      "t_ms": 915,
+      "brightness": 16.86
+    }
+  ],
+  "toolbar_icon_segs": [],
+  "font_step": "segs<7, 未点击"
+}

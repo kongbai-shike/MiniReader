@@ -1,0 +1,35 @@
+# MiniReader 运行依赖
+#
+# 本项目只需要一个 Qt 绑定，二选一即可（代码会自动选用已装的那个）。
+# pip 无法表达「装这个或那个」，所以这里默认给出推荐项，备选项注释掉了。
+#
+#   方案 A（推荐）: py -3.12 -m pip install PySide6
+#   方案 B（本机已装，无需任何安装）: PyQt5 5.15.11 / Qt 5.15.2 已在 Python 3.12 上可用
+#
+# 用下面命令确认当前用的是哪个：
+#   py -3.12 -m minireader --check
+
+PySide6>=6.5
+
+# --- 备选：改用 PyQt5 时，注释掉上面一行，启用下面这行 ---
+# PyQt5>=5.15
+
+# --- 为什么不用别的 ---
+#
+# PyQt6 刻意不支持：Qt6 改了 QTextEdit 的换行与滚动行为，本项目的滚动像素计算
+#   没有在 PyQt6 上验证过，宁可不声称支持。
+#
+# 不依赖 chardet / charset-normalizer：实测对中文小说的判定不如本项目「按常用字
+#   密度给候选编码打分」稳定，而且省掉一个 C 扩展依赖。
+#
+# 不依赖 keyboard / pynput：全局热键用 ctypes 直接调 user32.RegisterHotKey。
+#   那两个库需要安装全局键盘钩子，容易被杀软误报，而且要常驻后台线程。
+#
+# 不依赖 pywin32：用到的 Win32 API（RegisterHotKey / UnregisterHotKey /
+#   SetConsoleOutputCP / SetWindowTextW / SetLayeredWindowAttributes /
+#   GetWindowLongPtrW / SetWindowLongPtrW / GetMonitorInfoW / GetDpiForWindow）
+#   全部用 ctypes 直接调用，见 minireader/win32.py。每个封装函数都不抛异常：
+#   它们会在窗口创建和原生事件过滤器里被调用，在那里抛异常会直接杀掉窗口。
+#
+# 不依赖任何图标/托盘资源库：托盘图标是 QPainter 画出来的（ui/tray.py），
+#   不带二进制资源文件，PyInstaller 打包后不会丢图。

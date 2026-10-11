@@ -1,0 +1,247 @@
+{
+  "window_rect": [
+    1329,
+    296,
+    1760,
+    916
+  ],
+  "size": [
+    431,
+    620
+  ],
+  "surface_edges_screen_black": {
+    "left_med": 18,
+    "right_med": 414,
+    "top_med": 18,
+    "bottom_med": 602,
+    "visual_size": [
+      397,
+      585
+    ]
+  },
+  "corner_white": {
+    "curve_top_left": {
+      "0": null,
+      "1": null,
+      "2": null,
+      "3": null,
+      "4": null,
+      "5": null,
+      "6": null,
+      "7": null,
+      "8": null,
+      "9": null,
+      "10": null,
+      "11": null,
+      "12": null,
+      "13": null,
+      "14": null,
+      "15": null,
+      "16": null,
+      "17": null,
+      "18": 27,
+      "19": 25,
+      "20": 24,
+      "21": 22,
+      "22": 21,
+      "23": 21,
+      "24": 20,
+      "25": 19,
+      "26": 19,
+      "27": 18,
+      "28": 18,
+      "29": 18,
+      "30": 18,
+      "31": 18,
+      "32": 18,
+      "33": 18,
+      "34": 18,
+      "35": 18,
+      "36": 18,
+      "37": 18,
+      "38": 18,
+      "39": 18
+    },
+    "radius_fit": 7.1,
+    "flat_top_first_x": 27
+  },
+  "dash_top_row": {
+    "printwindow": 66,
+    "screen_black": 66,
+    "screen_white": 50,
+    "offset_pw_minus_screen": 0
+  },
+  "alpha": {
+    "body_center": {
+      "at": [
+        215,
+        300
+      ],
+      "Cb_rgb": [
+        60.1,
+        60.1,
+        60.1
+      ],
+      "Cw_rgb": [
+        143.2,
+        143.2,
+        143.2
+      ],
+      "alpha_rgb": [
+        0.674,
+        0.674,
+        0.674
+      ],
+      "alpha_mean": 0.674,
+      "source_rgb": [
+        89,
+        89,
+        89
+      ],
+      "source_hex": "#595959"
+    },
+    "topbar_drag": {
+      "at": [
+        150,
+        33
+      ],
+      "Cb_rgb": [
+        16.0,
+        16.0,
+        16.0
+      ],
+      "Cw_rgb": [
+        118.0,
+        118.0,
+        118.0
+      ],
+      "alpha_rgb": [
+        0.6,
+        0.6,
+        0.6
+      ],
+      "alpha_mean": 0.6,
+      "source_rgb": [
+        27,
+        27,
+        27
+      ],
+      "source_hex": "#1b1b1b"
+    },
+    "card_fill": {
+      "at": [
+        122,
+        423
+      ],
+      "Cb_rgb": [
+        24.0,
+        24.0,
+        24.0
+      ],
+      "Cw_rgb": [
+        122.0,
+        122.0,
+        122.0
+      ],
+      "alpha_rgb": [
+        0.616,
+        0.616,
+        0.616
+      ],
+      "alpha_mean": 0.616,
+      "source_rgb": [
+        39,
+        39,
+        39
+      ],
+      "source_hex": "#272727"
+    },
+    "icon_glyph": {
+      "at": [
+        218,
+        36
+      ],
+      "Cb_rgb": [
+        61.7,
+        61.7,
+        61.7
+      ],
+      "Cw_rgb": [
+        144.2,
+        144.2,
+        144.2
+      ],
+      "alpha_rgb": [
+        0.676,
+        0.676,
+        0.676
+      ],
+      "alpha_mean": 0.676,
+      "source_rgb": [
+        91,
+        91,
+        91
+      ],
+      "source_hex": "#5b5b5b"
+    },
+    "heading_text": {
+      "at": [
+        215,
+        360
+      ],
+      "Cb_rgb": [
+        16.0,
+        16.0,
+        16.0
+      ],
+      "Cw_rgb": [
+        118.0,
+        118.0,
+        118.0
+      ],
+      "alpha_rgb": [
+        0.6,
+        0.6,
+        0.6
+      ],
+      "alpha_mean": 0.6,
+      "source_rgb": [
+        27,
+        27,
+        27
+      ],
+      "source_hex": "#1b1b1b"
+    },
+    "body_region": {
+      "alpha_rgb": [
+        0.6,
+        0.6,
+        0.6
+      ],
+      "alpha_mean": 0.6,
+      "Cb_hex": "#101010",
+      "source_hex": "#1a1a1a",
+      "source_rgb": [
+        26,
+        26,
+        26
+      ]
+    },
+    "topbar_region": {
+      "alpha_rgb": [
+        0.6,
+        0.6,
+        0.6
+      ],
+      "alpha_mean": 0.6,
+      "Cb_hex": "#101010",
+      "source_hex": "#1a1a1a",
+      "source_rgb": [
+        26,
+        26,
+        26
+      ]
+    }
+  },
+  "pw_vs_screen_black_mean_abs_diff_inside": 0.0
+}

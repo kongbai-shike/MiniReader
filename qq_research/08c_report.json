@@ -1,0 +1,202 @@
+{
+  "toolbar_band_y": 119,
+  "toolbar_icons": [
+    [
+      47,
+      54
+    ],
+    [
+      103,
+      164
+    ],
+    [
+      199,
+      213
+    ],
+    [
+      245,
+      259
+    ],
+    [
+      289,
+      304
+    ],
+    [
+      334,
+      346
+    ],
+    [
+      372,
+      384
+    ]
+  ],
+  "toolbar_bg": "#101113",
+  "panel_bg": "#101113",
+  "panel_btn_bg": "#262829",
+  "panel_text_bright": "#b4b4b7",
+  "panel_text_dim": "#926c3c",
+  "click_x": {
+    "Tt": 296,
+    "A-": 340,
+    "A+": 378
+  },
+  "closed_band_brightness": 28.22,
+  "hotzone_scan2": [
+    {
+      "y": 40,
+      "b": 28.22,
+      "open": false
+    },
+    {
+      "y": 45,
+      "b": 28.22,
+      "open": false
+    },
+    {
+      "y": 50,
+      "b": 28.22,
+      "open": false
+    },
+    {
+      "y": 55,
+      "b": 28.22,
+      "open": false
+    },
+    {
+      "y": 60,
+      "b": 28.22,
+      "open": false
+    },
+    {
+      "y": 65,
+      "b": 28.22,
+      "open": false
+    },
+    {
+      "y": 70,
+      "b": 28.22,
+      "open": false
+    },
+    {
+      "y": 75,
+      "b": 28.22,
+      "open": false
+    },
+    {
+      "y": 80,
+      "b": 28.22,
+      "open": false
+    },
+    {
+      "y": 85,
+      "b": 28.22,
+      "open": false
+    },
+    {
+      "y": 90,
+      "b": 28.22,
+      "open": false
+    },
+    {
+      "y": 95,
+      "b": 28.22,
+      "open": false
+    },
+    {
+      "y": 100,
+      "b": 28.22,
+      "open": false
+    },
+    {
+      "y": 105,
+      "b": 25.66,
+      "open": true
+    },
+    {
+      "y": 110,
+      "b": 25.66,
+      "open": true
+    },
+    {
+      "y": 115,
+      "b": 25.66,
+      "open": true
+    },
+    {
+      "y": 120,
+      "b": 25.99,
+      "open": true
+    },
+    {
+      "y": 125,
+      "b": 25.99,
+      "open": true
+    },
+    {
+      "y": 130,
+      "b": 25.99,
+      "open": true
+    },
+    {
+      "y": 135,
+      "b": 25.99,
+      "open": true
+    },
+    {
+      "y": 140,
+      "b": 25.66,
+      "open": true
+    },
+    {
+      "y": 145,
+      "b": 25.66,
+      "open": true
+    },
+    {
+      "y": 150,
+      "b": 25.66,
+      "open": true
+    }
+  ],
+  "close_seq": [
+    {
+      "t_ms": 200,
+      "b": 28.22
+    },
+    {
+      "t_ms": 500,
+      "b": 28.22
+    },
+    {
+      "t_ms": 1000,
+      "b": 28.22
+    },
+    {
+      "t_ms": 1501,
+      "b": 28.22
+    },
+    {
+      "t_ms": 2000,
+      "b": 28.22
+    },
+    {
+      "t_ms": 3000,
+      "b": 28.22
+    }
+  ],
+  "glyph_baseline": {
+    "lines": 8,
+    "glyph_h": 22.8,
+    "pitch": 50.3
+  },
+  "glyph_after_aminus": {
+    "lines": 9,
+    "glyph_h": 20.4,
+    "pitch": 45.8
+  },
+  "glyph_after_restore": {
+    "lines": 8,
+    "glyph_h": 22.8,
+    "pitch": 50.3
+  }
+}

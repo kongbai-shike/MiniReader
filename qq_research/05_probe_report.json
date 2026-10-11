@@ -1,0 +1,63 @@
+{
+  "rect": [
+    1432,
+    262,
+    1869,
+    885
+  ],
+  "pill_bg_hist_top": [
+    [
+      61,
+      27
+    ],
+    [
+      32,
+      14
+    ],
+    [
+      27,
+      4
+    ],
+    [
+      37,
+      3
+    ],
+    [
+      25,
+      3
+    ],
+    [
+      20,
+      3
+    ]
+  ],
+  "pill_bg_mode_color": "#3d3d3d",
+  "pill_bg_mode_gray": 61,
+  "cursor_orig": [
+    917,
+    1014
+  ],
+  "hover": {
+    "eye": {
+      "changed_px": 478,
+      "before_median": "#101010",
+      "after_median": "#1b1b1b"
+    },
+    "opacity": {
+      "changed_px": 489,
+      "before_median": "#101010",
+      "after_median": "#1b1b1b"
+    },
+    "pin": {
+      "changed_px": 487,
+      "before_median": "#101010",
+      "after_median": "#1b1b1b"
+    }
+  },
+  "wheel_down": {
+    "body_mean_absdiff": 1.73,
+    "progress_mean_absdiff": 0.0
+  },
+  "wheel_up_restore_diff": 1.73,
+  "plus_click_tabstrip_diff": 6.35
+}

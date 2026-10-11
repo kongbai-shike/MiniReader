@@ -1,0 +1,80 @@
+{
+  "pill_hist": [
+    [
+      33,
+      36
+    ],
+    [
+      50,
+      19
+    ],
+    [
+      43,
+      10
+    ],
+    [
+      255,
+      0
+    ],
+    [
+      251,
+      0
+    ]
+  ],
+  "pill_bg_color": "#212121",
+  "pill_bg_gray": 33,
+  "pill_bg_count": 36,
+  "hover2": {
+    "eye": {
+      "hover_bg": "#1b1b1b",
+      "glyph_before": "#676767",
+      "glyph_after": "#6b6b6b",
+      "hl_bbox_rel": [
+        0,
+        0,
+        25,
+        25
+      ],
+      "hl_size": [
+        26,
+        26
+      ]
+    },
+    "opacity": {
+      "hover_bg": "#1b1b1b",
+      "glyph_before": "#626262",
+      "glyph_after": "#686868",
+      "hl_bbox_rel": [
+        0,
+        0,
+        25,
+        25
+      ],
+      "hl_size": [
+        26,
+        26
+      ]
+    },
+    "pin": {
+      "hover_bg": "#1b1b1b",
+      "glyph_before": "#838383",
+      "glyph_after": "#878787",
+      "hl_bbox_rel": [
+        0,
+        0,
+        25,
+        25
+      ],
+      "hl_size": [
+        26,
+        26
+      ]
+    }
+  },
+  "wheel3_down": {
+    "body_diff": 0.0,
+    "progress_diff": 0.0
+  },
+  "wheel3_shift_px": -120,
+  "wheel3_shift_corr": NaN
+}

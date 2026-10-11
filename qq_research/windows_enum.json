@@ -1,0 +1,2023 @@
+[
+  {
+    "hwnd": "0x10b1e",
+    "hwnd_int": 68382,
+    "pid": 21224,
+    "proc": "QQ.exe",
+    "title": "迷你窗",
+    "class": "Chrome_WidgetWin_1",
+    "visible": true,
+    "minimized": false,
+    "window_rect": [
+      1354,
+      210,
+      1781,
+      826
+    ],
+    "window_size": [
+      427,
+      616
+    ],
+    "client_rect_screen": [
+      1354,
+      210,
+      1781,
+      826
+    ],
+    "client_size": [
+      427,
+      616
+    ],
+    "dpi": 96,
+    "scale": 1.0,
+    "ex_style_hex": "0x200008",
+    "style_hex": "0x14020000",
+    "WS_EX_TOOLWINDOW": false,
+    "WS_EX_LAYERED": false,
+    "WS_EX_TOPMOST": true,
+    "WS_EX_TRANSPARENT": false,
+    "WS_EX_NOREDIRECTIONBITMAP": true,
+    "WS_POPUP": false,
+    "WS_CAPTION": false,
+    "WS_THICKFRAME": false,
+    "dwm_corner_pref": 1
+  },
+  {
+    "hwnd": "0x10b44",
+    "hwnd_int": 68420,
+    "pid": 21224,
+    "proc": "QQ.exe",
+    "title": "QQ",
+    "class": "Chrome_WidgetWin_1",
+    "visible": false,
+    "minimized": false,
+    "window_rect": [
+      1896,
+      385,
+      1960,
+      529
+    ],
+    "window_size": [
+      64,
+      144
+    ],
+    "client_rect_screen": [
+      1896,
+      385,
+      1960,
+      529
+    ],
+    "client_size": [
+      64,
+      144
+    ],
+    "dpi": 96,
+    "scale": 1.0,
+    "ex_style_hex": "0x200088",
+    "style_hex": "0x4000000",
+    "WS_EX_TOOLWINDOW": true,
+    "WS_EX_LAYERED": false,
+    "WS_EX_TOPMOST": true,
+    "WS_EX_TRANSPARENT": false,
+    "WS_EX_NOREDIRECTIONBITMAP": true,
+    "WS_POPUP": false,
+    "WS_CAPTION": false,
+    "WS_THICKFRAME": false,
+    "dwm_corner_pref": 1
+  },
+  {
+    "hwnd": "0x10760",
+    "hwnd_int": 67424,
+    "pid": 21224,
+    "proc": "QQ.exe",
+    "title": "QQ",
+    "class": "Chrome_WidgetWin_1",
+    "visible": false,
+    "minimized": false,
+    "window_rect": [
+      0,
+      0,
+      36,
+      39
+    ],
+    "window_size": [
+      36,
+      39
+    ],
+    "client_rect_screen": [
+      0,
+      0,
+      36,
+      39
+    ],
+    "client_size": [
+      36,
+      39
+    ],
+    "dpi": 96,
+    "scale": 1.0,
+    "ex_style_hex": "0x200008",
+    "style_hex": "0x4020000",
+    "WS_EX_TOOLWINDOW": false,
+    "WS_EX_LAYERED": false,
+    "WS_EX_TOPMOST": true,
+    "WS_EX_TRANSPARENT": false,
+    "WS_EX_NOREDIRECTIONBITMAP": true,
+    "WS_POPUP": false,
+    "WS_CAPTION": false,
+    "WS_THICKFRAME": false,
+    "dwm_corner_pref": 1
+  },
+  {
+    "hwnd": "0x2018e",
+    "hwnd_int": 131470,
+    "pid": 10180,
+    "proc": "QQPCTray.exe",
+    "title": "腾讯电脑管家",
+    "class": "TXGuiFoundation",
+    "visible": false,
+    "minimized": false,
+    "window_rect": [
+      -1,
+      -1,
+      379,
+      459
+    ],
+    "window_size": [
+      380,
+      460
+    ],
+    "client_rect_screen": [
+      -1,
+      -1,
+      379,
+      459
+    ],
+    "client_size": [
+      380,
+      460
+    ],
+    "dpi": 96,
+    "scale": 1.0,
+    "ex_style_hex": "0x8",
+    "style_hex": "-0x79f80000",
+    "WS_EX_TOOLWINDOW": false,
+    "WS_EX_LAYERED": false,
+    "WS_EX_TOPMOST": true,
+    "WS_EX_TRANSPARENT": false,
+    "WS_EX_NOREDIRECTIONBITMAP": false,
+    "WS_POPUP": true,
+    "WS_CAPTION": false,
+    "WS_THICKFRAME": false,
+    "dwm_corner_pref": 0
+  },
+  {
+    "hwnd": "0x10b46",
+    "hwnd_int": 68422,
+    "pid": 24056,
+    "proc": "QQ.exe",
+    "title": "",
+    "class": "Chrome_WidgetWin_0",
+    "visible": false,
+    "minimized": false,
+    "window_rect": [
+      0,
+      0,
+      0,
+      0
+    ],
+    "window_size": [
+      0,
+      0
+    ],
+    "client_rect_screen": [
+      0,
+      0,
+      0,
+      0
+    ],
+    "client_size": [
+      0,
+      0
+    ],
+    "dpi": 96,
+    "scale": 1.0,
+    "ex_style_hex": "0x80",
+    "style_hex": "-0x74000000",
+    "WS_EX_TOOLWINDOW": true,
+    "WS_EX_LAYERED": false,
+    "WS_EX_TOPMOST": false,
+    "WS_EX_TRANSPARENT": false,
+    "WS_EX_NOREDIRECTIONBITMAP": false,
+    "WS_POPUP": true,
+    "WS_CAPTION": false,
+    "WS_THICKFRAME": false,
+    "dwm_corner_pref": 0
+  },
+  {
+    "hwnd": "0x80b2c",
+    "hwnd_int": 527148,
+    "pid": 21224,
+    "proc": "QQ.exe",
+    "title": "GDI+ Window (QQ.exe)",
+    "class": "GDI+ Hook Window Class",
+    "visible": false,
+    "minimized": false,
+    "window_rect": [
+      0,
+      0,
+      1,
+      1
+    ],
+    "window_size": [
+      1,
+      1
+    ],
+    "client_rect_screen": [
+      0,
+      0,
+      1,
+      1
+    ],
+    "client_size": [
+      1,
+      1
+    ],
+    "dpi": 96,
+    "scale": 1.0,
+    "ex_style_hex": "0x0",
+    "style_hex": "-0x7c000000",
+    "WS_EX_TOOLWINDOW": false,
+    "WS_EX_LAYERED": false,
+    "WS_EX_TOPMOST": false,
+    "WS_EX_TRANSPARENT": false,
+    "WS_EX_NOREDIRECTIONBITMAP": false,
+    "WS_POPUP": true,
+    "WS_CAPTION": false,
+    "WS_THICKFRAME": false,
+    "dwm_corner_pref": 0
+  },
+  {
+    "hwnd": "0x10b28",
+    "hwnd_int": 68392,
+    "pid": 24056,
+    "proc": "QQ.exe",
+    "title": "",
+    "class": "Chrome_WidgetWin_0",
+    "visible": false,
+    "minimized": false,
+    "window_rect": [
+      0,
+      0,
+      0,
+      0
+    ],
+    "window_size": [
+      0,
+      0
+    ],
+    "client_rect_screen": [
+      0,
+      0,
+      0,
+      0
+    ],
+    "client_size": [
+      0,
+      0
+    ],
+    "dpi": 96,
+    "scale": 1.0,
+    "ex_style_hex": "0x80",
+    "style_hex": "-0x74000000",
+    "WS_EX_TOOLWINDOW": true,
+    "WS_EX_LAYERED": false,
+    "WS_EX_TOPMOST": false,
+    "WS_EX_TRANSPARENT": false,
+    "WS_EX_NOREDIRECTIONBITMAP": false,
+    "WS_POPUP": true,
+    "WS_CAPTION": false,
+    "WS_THICKFRAME": false,
+    "dwm_corner_pref": 0
+  },
+  {
+    "hwnd": "0x10b26",
+    "hwnd_int": 68390,
+    "pid": 21224,
+    "proc": "QQ.exe",
+    "title": "QQ",
+    "class": "Chrome_WidgetWin_1",
+    "visible": false,
+    "minimized": false,
+    "window_rect": [
+      750,
+      234,
+      1171,
+      846
+    ],
+    "window_size": [
+      421,
+      612
+    ],
+    "client_rect_screen": [
+      750,
+      234,
+      1171,
+      846
+    ],
+    "client_size": [
+      421,
+      612
+    ],
+    "dpi": 96,
+    "scale": 1.0,
+    "ex_style_hex": "0x200000",
+    "style_hex": "0x4020000",
+    "WS_EX_TOOLWINDOW": false,
+    "WS_EX_LAYERED": false,
+    "WS_EX_TOPMOST": false,
+    "WS_EX_TRANSPARENT": false,
+    "WS_EX_NOREDIRECTIONBITMAP": true,
+    "WS_POPUP": false,
+    "WS_CAPTION": false,
+    "WS_THICKFRAME": false,
+    "dwm_corner_pref": 1
+  },
+  {
+    "hwnd": "0x10b20",
+    "hwnd_int": 68384,
+    "pid": 24056,
+    "proc": "QQ.exe",
+    "title": "",
+    "class": "Chrome_WidgetWin_0",
+    "visible": false,
+    "minimized": false,
+    "window_rect": [
+      0,
+      0,
+      0,
+      0
+    ],
+    "window_size": [
+      0,
+      0
+    ],
+    "client_rect_screen": [
+      0,
+      0,
+      0,
+      0
+    ],
+    "client_size": [
+      0,
+      0
+    ],
+    "dpi": 96,
+    "scale": 1.0,
+    "ex_style_hex": "0x80",
+    "style_hex": "-0x74000000",
+    "WS_EX_TOOLWINDOW": true,
+    "WS_EX_LAYERED": false,
+    "WS_EX_TOPMOST": false,
+    "WS_EX_TRANSPARENT": false,
+    "WS_EX_NOREDIRECTIONBITMAP": false,
+    "WS_POPUP": true,
+    "WS_CAPTION": false,
+    "WS_THICKFRAME": false,
+    "dwm_corner_pref": 0
+  },
+  {
+    "hwnd": "0x20766",
+    "hwnd_int": 132966,
+    "pid": 24056,
+    "proc": "QQ.exe",
+    "title": "",
+    "class": "Chrome_WidgetWin_0",
+    "visible": false,
+    "minimized": false,
+    "window_rect": [
+      0,
+      0,
+      0,
+      0
+    ],
+    "window_size": [
+      0,
+      0
+    ],
+    "client_rect_screen": [
+      0,
+      0,
+      0,
+      0
+    ],
+    "client_size": [
+      0,
+      0
+    ],
+    "dpi": 96,
+    "scale": 1.0,
+    "ex_style_hex": "0x80",
+    "style_hex": "-0x74000000",
+    "WS_EX_TOOLWINDOW": true,
+    "WS_EX_LAYERED": false,
+    "WS_EX_TOPMOST": false,
+    "WS_EX_TRANSPARENT": false,
+    "WS_EX_NOREDIRECTIONBITMAP": false,
+    "WS_POPUP": true,
+    "WS_CAPTION": false,
+    "WS_THICKFRAME": false,
+    "dwm_corner_pref": 0
+  },
+  {
+    "hwnd": "0x1073a",
+    "hwnd_int": 67386,
+    "pid": 24056,
+    "proc": "QQ.exe",
+    "title": "",
+    "class": "Chrome_WidgetWin_0",
+    "visible": false,
+    "minimized": false,
+    "window_rect": [
+      0,
+      0,
+      0,
+      0
+    ],
+    "window_size": [
+      0,
+      0
+    ],
+    "client_rect_screen": [
+      0,
+      0,
+      0,
+      0
+    ],
+    "client_size": [
+      0,
+      0
+    ],
+    "dpi": 96,
+    "scale": 1.0,
+    "ex_style_hex": "0x80",
+    "style_hex": "-0x74000000",
+    "WS_EX_TOOLWINDOW": true,
+    "WS_EX_LAYERED": false,
+    "WS_EX_TOPMOST": false,
+    "WS_EX_TRANSPARENT": false,
+    "WS_EX_NOREDIRECTIONBITMAP": false,
+    "WS_POPUP": true,
+    "WS_CAPTION": false,
+    "WS_THICKFRAME": false,
+    "dwm_corner_pref": 0
+  },
+  {
+    "hwnd": "0x10736",
+    "hwnd_int": 67382,
+    "pid": 24056,
+    "proc": "QQ.exe",
+    "title": "",
+    "class": "Chrome_WidgetWin_0",
+    "visible": false,
+    "minimized": false,
+    "window_rect": [
+      0,
+      0,
+      0,
+      0
+    ],
+    "window_size": [
+      0,
+      0
+    ],
+    "client_rect_screen": [
+      0,
+      0,
+      0,
+      0
+    ],
+    "client_size": [
+      0,
+      0
+    ],
+    "dpi": 96,
+    "scale": 1.0,
+    "ex_style_hex": "0x80",
+    "style_hex": "-0x74000000",
+    "WS_EX_TOOLWINDOW": true,
+    "WS_EX_LAYERED": false,
+    "WS_EX_TOPMOST": false,
+    "WS_EX_TRANSPARENT": false,
+    "WS_EX_NOREDIRECTIONBITMAP": false,
+    "WS_POPUP": true,
+    "WS_CAPTION": false,
+    "WS_THICKFRAME": false,
+    "dwm_corner_pref": 0
+  },
+  {
+    "hwnd": "0x4071a",
+    "hwnd_int": 263962,
+    "pid": 21224,
+    "proc": "QQ.exe",
+    "title": "QQ",
+    "class": "Chrome_WidgetWin_1",
+    "visible": false,
+    "minimized": false,
+    "window_rect": [
+      479,
+      180,
+      1440,
+      900
+    ],
+    "window_size": [
+      961,
+      720
+    ],
+    "client_rect_screen": [
+      479,
+      180,
+      1440,
+      900
+    ],
+    "client_size": [
+      961,
+      720
+    ],
+    "dpi": 96,
+    "scale": 1.0,
+    "ex_style_hex": "0x200100",
+    "style_hex": "0x4c70000",
+    "WS_EX_TOOLWINDOW": false,
+    "WS_EX_LAYERED": false,
+    "WS_EX_TOPMOST": false,
+    "WS_EX_TRANSPARENT": false,
+    "WS_EX_NOREDIRECTIONBITMAP": true,
+    "WS_POPUP": false,
+    "WS_CAPTION": true,
+    "WS_THICKFRAME": true,
+    "dwm_corner_pref": 2
+  },
+  {
+    "hwnd": "0x1072e",
+    "hwnd_int": 67374,
+    "pid": 21224,
+    "proc": "QQ.exe",
+    "title": "QQ",
+    "class": "Chrome_WidgetWin_1",
+    "visible": false,
+    "minimized": false,
+    "window_rect": [
+      528,
+      156,
+      1392,
+      925
+    ],
+    "window_size": [
+      864,
+      769
+    ],
+    "client_rect_screen": [
+      528,
+      156,
+      1392,
+      925
+    ],
+    "client_size": [
+      864,
+      769
+    ],
+    "dpi": 96,
+    "scale": 1.0,
+    "ex_style_hex": "0x200100",
+    "style_hex": "0x4c70000",
+    "WS_EX_TOOLWINDOW": false,
+    "WS_EX_LAYERED": false,
+    "WS_EX_TOPMOST": false,
+    "WS_EX_TRANSPARENT": false,
+    "WS_EX_NOREDIRECTIONBITMAP": true,
+    "WS_POPUP": false,
+    "WS_CAPTION": true,
+    "WS_THICKFRAME": true,
+    "dwm_corner_pref": 2
+  },
+  {
+    "hwnd": "0x30718",
+    "hwnd_int": 198424,
+    "pid": 24056,
+    "proc": "QQ.exe",
+    "title": "",
+    "class": "Chrome_WidgetWin_0",
+    "visible": false,
+    "minimized": false,
+    "window_rect": [
+      0,
+      0,
+      0,
+      0
+    ],
+    "window_size": [
+      0,
+      0
+    ],
+    "client_rect_screen": [
+      0,
+      0,
+      0,
+      0
+    ],
+    "client_size": [
+      0,
+      0
+    ],
+    "dpi": 96,
+    "scale": 1.0,
+    "ex_style_hex": "0x80",
+    "style_hex": "-0x74000000",
+    "WS_EX_TOOLWINDOW": true,
+    "WS_EX_LAYERED": false,
+    "WS_EX_TOPMOST": false,
+    "WS_EX_TRANSPARENT": false,
+    "WS_EX_NOREDIRECTIONBITMAP": false,
+    "WS_POPUP": true,
+    "WS_CAPTION": false,
+    "WS_THICKFRAME": false,
+    "dwm_corner_pref": 0
+  },
+  {
+    "hwnd": "0x30710",
+    "hwnd_int": 198416,
+    "pid": 21224,
+    "proc": "QQ.exe",
+    "title": "QQ",
+    "class": "Chrome_WidgetWin_1",
+    "visible": false,
+    "minimized": false,
+    "window_rect": [
+      959,
+      539,
+      1011,
+      578
+    ],
+    "window_size": [
+      52,
+      39
+    ],
+    "client_rect_screen": [
+      959,
+      539,
+      1011,
+      578
+    ],
+    "client_size": [
+      52,
+      39
+    ],
+    "dpi": 96,
+    "scale": 1.0,
+    "ex_style_hex": "0x200100",
+    "style_hex": "0x4c70000",
+    "WS_EX_TOOLWINDOW": false,
+    "WS_EX_LAYERED": false,
+    "WS_EX_TOPMOST": false,
+    "WS_EX_TRANSPARENT": false,
+    "WS_EX_NOREDIRECTIONBITMAP": true,
+    "WS_POPUP": false,
+    "WS_CAPTION": true,
+    "WS_THICKFRAME": true,
+    "dwm_corner_pref": 2
+  },
+  {
+    "hwnd": "0x10712",
+    "hwnd_int": 67346,
+    "pid": 21224,
+    "proc": "QQ.exe",
+    "title": "",
+    "class": "Chrome_WidgetWin_0",
+    "visible": false,
+    "minimized": false,
+    "window_rect": [
+      0,
+      0,
+      0,
+      0
+    ],
+    "window_size": [
+      0,
+      0
+    ],
+    "client_rect_screen": [
+      0,
+      0,
+      0,
+      0
+    ],
+    "client_size": [
+      0,
+      0
+    ],
+    "dpi": 96,
+    "scale": 1.0,
+    "ex_style_hex": "0x80",
+    "style_hex": "-0x74000000",
+    "WS_EX_TOOLWINDOW": true,
+    "WS_EX_LAYERED": false,
+    "WS_EX_TOPMOST": false,
+    "WS_EX_TRANSPARENT": false,
+    "WS_EX_NOREDIRECTIONBITMAP": false,
+    "WS_POPUP": true,
+    "WS_CAPTION": false,
+    "WS_THICKFRAME": false,
+    "dwm_corner_pref": 0
+  },
+  {
+    "hwnd": "0x1070c",
+    "hwnd_int": 67340,
+    "pid": 24056,
+    "proc": "QQ.exe",
+    "title": "",
+    "class": "Chrome_WidgetWin_0",
+    "visible": false,
+    "minimized": false,
+    "window_rect": [
+      0,
+      0,
+      0,
+      0
+    ],
+    "window_size": [
+      0,
+      0
+    ],
+    "client_rect_screen": [
+      0,
+      0,
+      0,
+      0
+    ],
+    "client_size": [
+      0,
+      0
+    ],
+    "dpi": 96,
+    "scale": 1.0,
+    "ex_style_hex": "0x80",
+    "style_hex": "-0x74000000",
+    "WS_EX_TOOLWINDOW": true,
+    "WS_EX_LAYERED": false,
+    "WS_EX_TOPMOST": false,
+    "WS_EX_TRANSPARENT": false,
+    "WS_EX_NOREDIRECTIONBITMAP": false,
+    "WS_POPUP": true,
+    "WS_CAPTION": false,
+    "WS_THICKFRAME": false,
+    "dwm_corner_pref": 0
+  },
+  {
+    "hwnd": "0x205fa",
+    "hwnd_int": 132602,
+    "pid": 21224,
+    "proc": "QQ.exe",
+    "title": "",
+    "class": "Electron_NotifyIconHostWindow",
+    "visible": false,
+    "minimized": false,
+    "window_rect": [
+      0,
+      0,
+      0,
+      0
+    ],
+    "window_size": [
+      0,
+      0
+    ],
+    "client_rect_screen": [
+      0,
+      0,
+      0,
+      0
+    ],
+    "client_size": [
+      0,
+      0
+    ],
+    "dpi": 96,
+    "scale": 1.0,
+    "ex_style_hex": "0x0",
+    "style_hex": "-0x7c000000",
+    "WS_EX_TOOLWINDOW": false,
+    "WS_EX_LAYERED": false,
+    "WS_EX_TOPMOST": false,
+    "WS_EX_TRANSPARENT": false,
+    "WS_EX_NOREDIRECTIONBITMAP": false,
+    "WS_POPUP": true,
+    "WS_CAPTION": false,
+    "WS_THICKFRAME": false,
+    "dwm_corner_pref": 0
+  },
+  {
+    "hwnd": "0x106b6",
+    "hwnd_int": 67254,
+    "pid": 21224,
+    "proc": "QQ.exe",
+    "title": "",
+    "class": "Chrome_WidgetWin_0",
+    "visible": false,
+    "minimized": false,
+    "window_rect": [
+      52,
+      52,
+      1492,
+      841
+    ],
+    "window_size": [
+      1440,
+      789
+    ],
+    "client_rect_screen": [
+      60,
+      83,
+      1484,
+      833
+    ],
+    "client_size": [
+      1424,
+      750
+    ],
+    "dpi": 96,
+    "scale": 1.0,
+    "ex_style_hex": "0x100",
+    "style_hex": "0x6cf0000",
+    "WS_EX_TOOLWINDOW": false,
+    "WS_EX_LAYERED": false,
+    "WS_EX_TOPMOST": false,
+    "WS_EX_TRANSPARENT": false,
+    "WS_EX_NOREDIRECTIONBITMAP": false,
+    "WS_POPUP": false,
+    "WS_CAPTION": true,
+    "WS_THICKFRAME": true,
+    "dwm_corner_pref": 0
+  },
+  {
+    "hwnd": "0x106b0",
+    "hwnd_int": 67248,
+    "pid": 21224,
+    "proc": "QQ.exe",
+    "title": "",
+    "class": "Base_PowerMessageWindow",
+    "visible": false,
+    "minimized": false,
+    "window_rect": [
+      0,
+      0,
+      0,
+      0
+    ],
+    "window_size": [
+      0,
+      0
+    ],
+    "client_rect_screen": [
+      0,
+      0,
+      0,
+      0
+    ],
+    "client_size": [
+      0,
+      0
+    ],
+    "dpi": 96,
+    "scale": 1.0,
+    "ex_style_hex": "0x8000000",
+    "style_hex": "-0x7c000000",
+    "WS_EX_TOOLWINDOW": false,
+    "WS_EX_LAYERED": false,
+    "WS_EX_TOPMOST": false,
+    "WS_EX_TRANSPARENT": false,
+    "WS_EX_NOREDIRECTIONBITMAP": false,
+    "WS_POPUP": true,
+    "WS_CAPTION": false,
+    "WS_THICKFRAME": false,
+    "dwm_corner_pref": 0
+  },
+  {
+    "hwnd": "0x2018a",
+    "hwnd_int": 131466,
+    "pid": 10180,
+    "proc": "QQPCTray.exe",
+    "title": "",
+    "class": "{E5D5C7CB-353A-448a-814E-487121343662}",
+    "visible": false,
+    "minimized": false,
+    "window_rect": [
+      0,
+      0,
+      0,
+      0
+    ],
+    "window_size": [
+      0,
+      0
+    ],
+    "client_rect_screen": [
+      0,
+      0,
+      0,
+      0
+    ],
+    "client_size": [
+      0,
+      0
+    ],
+    "dpi": 96,
+    "scale": 1.0,
+    "ex_style_hex": "0x0",
+    "style_hex": "-0x7c000000",
+    "WS_EX_TOOLWINDOW": false,
+    "WS_EX_LAYERED": false,
+    "WS_EX_TOPMOST": false,
+    "WS_EX_TRANSPARENT": false,
+    "WS_EX_NOREDIRECTIONBITMAP": false,
+    "WS_POPUP": true,
+    "WS_CAPTION": false,
+    "WS_THICKFRAME": false,
+    "dwm_corner_pref": 0
+  },
+  {
+    "hwnd": "0x10190",
+    "hwnd_int": 65936,
+    "pid": 10180,
+    "proc": "QQPCTray.exe",
+    "title": "",
+    "class": "BlueRaySystemEventWin{F5EC8008-A812-4CF4-A2FB-237D7C0F9848}",
+    "visible": false,
+    "minimized": false,
+    "window_rect": [
+      0,
+      0,
+      136,
+      39
+    ],
+    "window_size": [
+      136,
+      39
+    ],
+    "client_rect_screen": [
+      8,
+      31,
+      128,
+      31
+    ],
+    "client_size": [
+      120,
+      0
+    ],
+    "dpi": 96,
+    "scale": 1.0,
+    "ex_style_hex": "0x100",
+    "style_hex": "0x4c00000",
+    "WS_EX_TOOLWINDOW": false,
+    "WS_EX_LAYERED": false,
+    "WS_EX_TOPMOST": false,
+    "WS_EX_TRANSPARENT": false,
+    "WS_EX_NOREDIRECTIONBITMAP": false,
+    "WS_POPUP": false,
+    "WS_CAPTION": true,
+    "WS_THICKFRAME": false,
+    "dwm_corner_pref": 0
+  },
+  {
+    "hwnd": "0x1018c",
+    "hwnd_int": 65932,
+    "pid": 10180,
+    "proc": "QQPCTray.exe",
+    "title": "",
+    "class": "BlueRayPowerNotiWin{5AEB4FC1-A8F4-471E-88A4-90E429591810}",
+    "visible": false,
+    "minimized": false,
+    "window_rect": [
+      0,
+      0,
+      136,
+      39
+    ],
+    "window_size": [
+      136,
+      39
+    ],
+    "client_rect_screen": [
+      8,
+      31,
+      128,
+      31
+    ],
+    "client_size": [
+      120,
+      0
+    ],
+    "dpi": 96,
+    "scale": 1.0,
+    "ex_style_hex": "0x100",
+    "style_hex": "0x4c00000",
+    "WS_EX_TOOLWINDOW": false,
+    "WS_EX_LAYERED": false,
+    "WS_EX_TOPMOST": false,
+    "WS_EX_TRANSPARENT": false,
+    "WS_EX_NOREDIRECTIONBITMAP": false,
+    "WS_POPUP": false,
+    "WS_CAPTION": true,
+    "WS_THICKFRAME": false,
+    "dwm_corner_pref": 0
+  },
+  {
+    "hwnd": "0x20186",
+    "hwnd_int": 131462,
+    "pid": 10180,
+    "proc": "QQPCTray.exe",
+    "title": "",
+    "class": "{E5D5C7CB-353A-448a-814E-487121343662}",
+    "visible": false,
+    "minimized": false,
+    "window_rect": [
+      0,
+      0,
+      0,
+      0
+    ],
+    "window_size": [
+      0,
+      0
+    ],
+    "client_rect_screen": [
+      0,
+      0,
+      0,
+      0
+    ],
+    "client_size": [
+      0,
+      0
+    ],
+    "dpi": 96,
+    "scale": 1.0,
+    "ex_style_hex": "0x0",
+    "style_hex": "-0x7c000000",
+    "WS_EX_TOOLWINDOW": false,
+    "WS_EX_LAYERED": false,
+    "WS_EX_TOPMOST": false,
+    "WS_EX_TRANSPARENT": false,
+    "WS_EX_NOREDIRECTIONBITMAP": false,
+    "WS_POPUP": true,
+    "WS_CAPTION": false,
+    "WS_THICKFRAME": false,
+    "dwm_corner_pref": 0
+  },
+  {
+    "hwnd": "0x10180",
+    "hwnd_int": 65920,
+    "pid": 10180,
+    "proc": "QQPCTray.exe",
+    "title": "",
+    "class": "{E5D5C7CB-353A-448a-814E-487121343662}",
+    "visible": false,
+    "minimized": false,
+    "window_rect": [
+      0,
+      0,
+      0,
+      0
+    ],
+    "window_size": [
+      0,
+      0
+    ],
+    "client_rect_screen": [
+      0,
+      0,
+      0,
+      0
+    ],
+    "client_size": [
+      0,
+      0
+    ],
+    "dpi": 96,
+    "scale": 1.0,
+    "ex_style_hex": "0x0",
+    "style_hex": "-0x7c000000",
+    "WS_EX_TOOLWINDOW": false,
+    "WS_EX_LAYERED": false,
+    "WS_EX_TOPMOST": false,
+    "WS_EX_TRANSPARENT": false,
+    "WS_EX_NOREDIRECTIONBITMAP": false,
+    "WS_POPUP": true,
+    "WS_CAPTION": false,
+    "WS_THICKFRAME": false,
+    "dwm_corner_pref": 0
+  },
+  {
+    "hwnd": "0x2014c",
+    "hwnd_int": 131404,
+    "pid": 10180,
+    "proc": "QQPCTray.exe",
+    "title": "UDisk.X64.TrayIconMgr",
+    "class": "UDisk.X64.Window",
+    "visible": false,
+    "minimized": false,
+    "window_rect": [
+      0,
+      0,
+      0,
+      0
+    ],
+    "window_size": [
+      0,
+      0
+    ],
+    "client_rect_screen": [
+      0,
+      0,
+      0,
+      0
+    ],
+    "client_size": [
+      0,
+      0
+    ],
+    "dpi": 96,
+    "scale": 1.0,
+    "ex_style_hex": "0x0",
+    "style_hex": "-0x7c000000",
+    "WS_EX_TOOLWINDOW": false,
+    "WS_EX_LAYERED": false,
+    "WS_EX_TOPMOST": false,
+    "WS_EX_TRANSPARENT": false,
+    "WS_EX_NOREDIRECTIONBITMAP": false,
+    "WS_POPUP": true,
+    "WS_CAPTION": false,
+    "WS_THICKFRAME": false,
+    "dwm_corner_pref": 0
+  },
+  {
+    "hwnd": "0x2014a",
+    "hwnd_int": 131402,
+    "pid": 10180,
+    "proc": "QQPCTray.exe",
+    "title": "UDiskVirtualWindow",
+    "class": "PCMGR_UDisk_WndClass",
+    "visible": false,
+    "minimized": false,
+    "window_rect": [
+      0,
+      0,
+      136,
+      39
+    ],
+    "window_size": [
+      136,
+      39
+    ],
+    "client_rect_screen": [
+      8,
+      31,
+      128,
+      31
+    ],
+    "client_size": [
+      120,
+      0
+    ],
+    "dpi": 96,
+    "scale": 1.0,
+    "ex_style_hex": "0x100",
+    "style_hex": "0x4cf0000",
+    "WS_EX_TOOLWINDOW": false,
+    "WS_EX_LAYERED": false,
+    "WS_EX_TOPMOST": false,
+    "WS_EX_TRANSPARENT": false,
+    "WS_EX_NOREDIRECTIONBITMAP": false,
+    "WS_POPUP": false,
+    "WS_CAPTION": true,
+    "WS_THICKFRAME": true,
+    "dwm_corner_pref": 0
+  },
+  {
+    "hwnd": "0x20162",
+    "hwnd_int": 131426,
+    "pid": 10180,
+    "proc": "QQPCTray.exe",
+    "title": "Window_tsvulfw_man_window_0",
+    "class": "Class_tsvulfw_man_window_0",
+    "visible": false,
+    "minimized": false,
+    "window_rect": [
+      0,
+      0,
+      1,
+      1
+    ],
+    "window_size": [
+      1,
+      1
+    ],
+    "client_rect_screen": [
+      0,
+      0,
+      1,
+      1
+    ],
+    "client_size": [
+      1,
+      1
+    ],
+    "dpi": 96,
+    "scale": 1.0,
+    "ex_style_hex": "0x80",
+    "style_hex": "-0x7c000000",
+    "WS_EX_TOOLWINDOW": true,
+    "WS_EX_LAYERED": false,
+    "WS_EX_TOPMOST": false,
+    "WS_EX_TRANSPARENT": false,
+    "WS_EX_NOREDIRECTIONBITMAP": false,
+    "WS_POPUP": true,
+    "WS_CAPTION": false,
+    "WS_THICKFRAME": false,
+    "dwm_corner_pref": 0
+  },
+  {
+    "hwnd": "0x10160",
+    "hwnd_int": 65888,
+    "pid": 10180,
+    "proc": "QQPCTray.exe",
+    "title": "TRAY_WINDOW_{346073DF-4150-4fbf-8509-8F8AC4EB98E9}",
+    "class": "Static",
+    "visible": false,
+    "minimized": false,
+    "window_rect": [
+      0,
+      0,
+      0,
+      0
+    ],
+    "window_size": [
+      0,
+      0
+    ],
+    "client_rect_screen": [
+      0,
+      0,
+      0,
+      0
+    ],
+    "client_size": [
+      0,
+      0
+    ],
+    "dpi": 96,
+    "scale": 1.0,
+    "ex_style_hex": "0x0",
+    "style_hex": "-0x7c000000",
+    "WS_EX_TOOLWINDOW": false,
+    "WS_EX_LAYERED": false,
+    "WS_EX_TOPMOST": false,
+    "WS_EX_TRANSPARENT": false,
+    "WS_EX_NOREDIRECTIONBITMAP": false,
+    "WS_POPUP": true,
+    "WS_CAPTION": false,
+    "WS_THICKFRAME": false,
+    "dwm_corner_pref": 0
+  },
+  {
+    "hwnd": "0x10150",
+    "hwnd_int": 65872,
+    "pid": 10180,
+    "proc": "QQPCTray.exe",
+    "title": "GDI+ Window (QQPCTray.exe)",
+    "class": "GDI+ Hook Window Class",
+    "visible": false,
+    "minimized": false,
+    "window_rect": [
+      0,
+      0,
+      1,
+      1
+    ],
+    "window_size": [
+      1,
+      1
+    ],
+    "client_rect_screen": [
+      0,
+      0,
+      1,
+      1
+    ],
+    "client_size": [
+      1,
+      1
+    ],
+    "dpi": 96,
+    "scale": 1.0,
+    "ex_style_hex": "0x0",
+    "style_hex": "-0x7c000000",
+    "WS_EX_TOOLWINDOW": false,
+    "WS_EX_LAYERED": false,
+    "WS_EX_TOPMOST": false,
+    "WS_EX_TRANSPARENT": false,
+    "WS_EX_NOREDIRECTIONBITMAP": false,
+    "WS_POPUP": true,
+    "WS_CAPTION": false,
+    "WS_THICKFRAME": false,
+    "dwm_corner_pref": 0
+  },
+  {
+    "hwnd": "0x2013c",
+    "hwnd_int": 131388,
+    "pid": 10180,
+    "proc": "QQPCTray.exe",
+    "title": "{B3F3857E-BA7F-4ca3-A990-775DA870AE6A}",
+    "class": "Static",
+    "visible": false,
+    "minimized": false,
+    "window_rect": [
+      0,
+      0,
+      136,
+      39
+    ],
+    "window_size": [
+      136,
+      39
+    ],
+    "client_rect_screen": [
+      8,
+      31,
+      128,
+      31
+    ],
+    "client_size": [
+      120,
+      0
+    ],
+    "dpi": 96,
+    "scale": 1.0,
+    "ex_style_hex": "0x100",
+    "style_hex": "0x4c00000",
+    "WS_EX_TOOLWINDOW": false,
+    "WS_EX_LAYERED": false,
+    "WS_EX_TOPMOST": false,
+    "WS_EX_TRANSPARENT": false,
+    "WS_EX_NOREDIRECTIONBITMAP": false,
+    "WS_POPUP": false,
+    "WS_CAPTION": true,
+    "WS_THICKFRAME": false,
+    "dwm_corner_pref": 0
+  },
+  {
+    "hwnd": "0x1013e",
+    "hwnd_int": 65854,
+    "pid": 10180,
+    "proc": "QQPCTray.exe",
+    "title": "",
+    "class": "QMCaptureHotKeyListener{49FD0A7E-28AF-4E26-A8EF-3D071AB1CDB4}",
+    "visible": false,
+    "minimized": false,
+    "window_rect": [
+      0,
+      0,
+      136,
+      39
+    ],
+    "window_size": [
+      136,
+      39
+    ],
+    "client_rect_screen": [
+      8,
+      31,
+      128,
+      31
+    ],
+    "client_size": [
+      120,
+      0
+    ],
+    "dpi": 96,
+    "scale": 1.0,
+    "ex_style_hex": "0x100",
+    "style_hex": "0x4c00000",
+    "WS_EX_TOOLWINDOW": false,
+    "WS_EX_LAYERED": false,
+    "WS_EX_TOPMOST": false,
+    "WS_EX_TRANSPARENT": false,
+    "WS_EX_NOREDIRECTIONBITMAP": false,
+    "WS_POPUP": false,
+    "WS_CAPTION": true,
+    "WS_THICKFRAME": false,
+    "dwm_corner_pref": 0
+  },
+  {
+    "hwnd": "0x10136",
+    "hwnd_int": 65846,
+    "pid": 10180,
+    "proc": "QQPCTray.exe",
+    "title": "",
+    "class": "QMFileSearchHotKeyListener{49FD0A7E-28AF-4E26-A8EF-3D071AB1CDB4}",
+    "visible": false,
+    "minimized": false,
+    "window_rect": [
+      0,
+      0,
+      136,
+      39
+    ],
+    "window_size": [
+      136,
+      39
+    ],
+    "client_rect_screen": [
+      8,
+      31,
+      128,
+      31
+    ],
+    "client_size": [
+      120,
+      0
+    ],
+    "dpi": 96,
+    "scale": 1.0,
+    "ex_style_hex": "0x100",
+    "style_hex": "0x4c00000",
+    "WS_EX_TOOLWINDOW": false,
+    "WS_EX_LAYERED": false,
+    "WS_EX_TOPMOST": false,
+    "WS_EX_TRANSPARENT": false,
+    "WS_EX_NOREDIRECTIONBITMAP": false,
+    "WS_POPUP": false,
+    "WS_CAPTION": true,
+    "WS_THICKFRAME": false,
+    "dwm_corner_pref": 0
+  },
+  {
+    "hwnd": "0x1010c",
+    "hwnd_int": 65804,
+    "pid": 10180,
+    "proc": "QQPCTray.exe",
+    "title": "",
+    "class": "Static",
+    "visible": false,
+    "minimized": false,
+    "window_rect": [
+      0,
+      0,
+      136,
+      39
+    ],
+    "window_size": [
+      136,
+      39
+    ],
+    "client_rect_screen": [
+      8,
+      31,
+      128,
+      31
+    ],
+    "client_size": [
+      120,
+      0
+    ],
+    "dpi": 96,
+    "scale": 1.0,
+    "ex_style_hex": "0x100",
+    "style_hex": "0x4c00000",
+    "WS_EX_TOOLWINDOW": false,
+    "WS_EX_LAYERED": false,
+    "WS_EX_TOPMOST": false,
+    "WS_EX_TRANSPARENT": false,
+    "WS_EX_NOREDIRECTIONBITMAP": false,
+    "WS_POPUP": false,
+    "WS_CAPTION": true,
+    "WS_THICKFRAME": false,
+    "dwm_corner_pref": 0
+  },
+  {
+    "hwnd": "0x1010a",
+    "hwnd_int": 65802,
+    "pid": 10180,
+    "proc": "QQPCTray.exe",
+    "title": "",
+    "class": "{E5D5C7CB-353A-448a-814E-487121343662}",
+    "visible": false,
+    "minimized": false,
+    "window_rect": [
+      0,
+      0,
+      0,
+      0
+    ],
+    "window_size": [
+      0,
+      0
+    ],
+    "client_rect_screen": [
+      0,
+      0,
+      0,
+      0
+    ],
+    "client_size": [
+      0,
+      0
+    ],
+    "dpi": 96,
+    "scale": 1.0,
+    "ex_style_hex": "0x0",
+    "style_hex": "-0x7c000000",
+    "WS_EX_TOOLWINDOW": false,
+    "WS_EX_LAYERED": false,
+    "WS_EX_TOPMOST": false,
+    "WS_EX_TRANSPARENT": false,
+    "WS_EX_NOREDIRECTIONBITMAP": false,
+    "WS_POPUP": true,
+    "WS_CAPTION": false,
+    "WS_THICKFRAME": false,
+    "dwm_corner_pref": 0
+  },
+  {
+    "hwnd": "0x10106",
+    "hwnd_int": 65798,
+    "pid": 10180,
+    "proc": "QQPCTray.exe",
+    "title": "",
+    "class": "Static",
+    "visible": false,
+    "minimized": false,
+    "window_rect": [
+      0,
+      0,
+      136,
+      39
+    ],
+    "window_size": [
+      136,
+      39
+    ],
+    "client_rect_screen": [
+      8,
+      31,
+      128,
+      31
+    ],
+    "client_size": [
+      120,
+      0
+    ],
+    "dpi": 96,
+    "scale": 1.0,
+    "ex_style_hex": "0x100",
+    "style_hex": "0x4c00000",
+    "WS_EX_TOOLWINDOW": false,
+    "WS_EX_LAYERED": false,
+    "WS_EX_TOPMOST": false,
+    "WS_EX_TRANSPARENT": false,
+    "WS_EX_NOREDIRECTIONBITMAP": false,
+    "WS_POPUP": false,
+    "WS_CAPTION": true,
+    "WS_THICKFRAME": false,
+    "dwm_corner_pref": 0
+  },
+  {
+    "hwnd": "0x10104",
+    "hwnd_int": 65796,
+    "pid": 10180,
+    "proc": "QQPCTray.exe",
+    "title": "",
+    "class": "Static",
+    "visible": false,
+    "minimized": false,
+    "window_rect": [
+      0,
+      0,
+      136,
+      39
+    ],
+    "window_size": [
+      136,
+      39
+    ],
+    "client_rect_screen": [
+      8,
+      31,
+      128,
+      31
+    ],
+    "client_size": [
+      120,
+      0
+    ],
+    "dpi": 96,
+    "scale": 1.0,
+    "ex_style_hex": "0x100",
+    "style_hex": "0x4c00000",
+    "WS_EX_TOOLWINDOW": false,
+    "WS_EX_LAYERED": false,
+    "WS_EX_TOPMOST": false,
+    "WS_EX_TRANSPARENT": false,
+    "WS_EX_NOREDIRECTIONBITMAP": false,
+    "WS_POPUP": false,
+    "WS_CAPTION": true,
+    "WS_THICKFRAME": false,
+    "dwm_corner_pref": 0
+  },
+  {
+    "hwnd": "0x10102",
+    "hwnd_int": 65794,
+    "pid": 10180,
+    "proc": "QQPCTray.exe",
+    "title": "AppBarDetectFullScreen",
+    "class": "AppBarDetectFullScreen",
+    "visible": false,
+    "minimized": false,
+    "window_rect": [
+      0,
+      0,
+      136,
+      39
+    ],
+    "window_size": [
+      136,
+      39
+    ],
+    "client_rect_screen": [
+      8,
+      31,
+      128,
+      31
+    ],
+    "client_size": [
+      120,
+      0
+    ],
+    "dpi": 96,
+    "scale": 1.0,
+    "ex_style_hex": "0x100",
+    "style_hex": "0x4c00000",
+    "WS_EX_TOOLWINDOW": false,
+    "WS_EX_LAYERED": false,
+    "WS_EX_TOPMOST": false,
+    "WS_EX_TRANSPARENT": false,
+    "WS_EX_NOREDIRECTIONBITMAP": false,
+    "WS_POPUP": false,
+    "WS_CAPTION": true,
+    "WS_THICKFRAME": false,
+    "dwm_corner_pref": 0
+  },
+  {
+    "hwnd": "0x10100",
+    "hwnd_int": 65792,
+    "pid": 10180,
+    "proc": "QQPCTray.exe",
+    "title": "TRAYAGENTWINDOW",
+    "class": "TRAYAGENTWINDOW",
+    "visible": false,
+    "minimized": false,
+    "window_rect": [
+      0,
+      0,
+      0,
+      0
+    ],
+    "window_size": [
+      0,
+      0
+    ],
+    "client_rect_screen": [
+      0,
+      0,
+      0,
+      0
+    ],
+    "client_size": [
+      0,
+      0
+    ],
+    "dpi": 96,
+    "scale": 1.0,
+    "ex_style_hex": "0x0",
+    "style_hex": "-0x7c000000",
+    "WS_EX_TOOLWINDOW": false,
+    "WS_EX_LAYERED": false,
+    "WS_EX_TOPMOST": false,
+    "WS_EX_TRANSPARENT": false,
+    "WS_EX_NOREDIRECTIONBITMAP": false,
+    "WS_POPUP": true,
+    "WS_CAPTION": false,
+    "WS_THICKFRAME": false,
+    "dwm_corner_pref": 0
+  },
+  {
+    "hwnd": "0x100fe",
+    "hwnd_int": 65790,
+    "pid": 10180,
+    "proc": "QQPCTray.exe",
+    "title": "TRAYWINDOW",
+    "class": "TRAYWINDOW",
+    "visible": false,
+    "minimized": false,
+    "window_rect": [
+      0,
+      0,
+      0,
+      0
+    ],
+    "window_size": [
+      0,
+      0
+    ],
+    "client_rect_screen": [
+      0,
+      0,
+      0,
+      0
+    ],
+    "client_size": [
+      0,
+      0
+    ],
+    "dpi": 96,
+    "scale": 1.0,
+    "ex_style_hex": "0x0",
+    "style_hex": "-0x7c000000",
+    "WS_EX_TOOLWINDOW": false,
+    "WS_EX_LAYERED": false,
+    "WS_EX_TOPMOST": false,
+    "WS_EX_TRANSPARENT": false,
+    "WS_EX_NOREDIRECTIONBITMAP": false,
+    "WS_POPUP": true,
+    "WS_CAPTION": false,
+    "WS_THICKFRAME": false,
+    "dwm_corner_pref": 0
+  },
+  {
+    "hwnd": "0x100fc",
+    "hwnd_int": 65788,
+    "pid": 10180,
+    "proc": "QQPCTray.exe",
+    "title": "",
+    "class": "DB0B0D87-F113-4750-98E2-C56C42972A12",
+    "visible": false,
+    "minimized": false,
+    "window_rect": [
+      0,
+      0,
+      0,
+      0
+    ],
+    "window_size": [
+      0,
+      0
+    ],
+    "client_rect_screen": [
+      0,
+      0,
+      0,
+      0
+    ],
+    "client_size": [
+      0,
+      0
+    ],
+    "dpi": 96,
+    "scale": 1.0,
+    "ex_style_hex": "0x0",
+    "style_hex": "-0x7c000000",
+    "WS_EX_TOOLWINDOW": false,
+    "WS_EX_LAYERED": false,
+    "WS_EX_TOPMOST": false,
+    "WS_EX_TRANSPARENT": false,
+    "WS_EX_NOREDIRECTIONBITMAP": false,
+    "WS_POPUP": true,
+    "WS_CAPTION": false,
+    "WS_THICKFRAME": false,
+    "dwm_corner_pref": 0
+  },
+  {
+    "hwnd": "0x10702",
+    "hwnd_int": 67330,
+    "pid": 21224,
+    "proc": "QQ.exe",
+    "title": "QQ",
+    "class": "Chrome_WidgetWin_1",
+    "visible": true,
+    "minimized": true,
+    "window_rect": [
+      -32000,
+      -32000,
+      -31840,
+      -31972
+    ],
+    "window_size": [
+      160,
+      28
+    ],
+    "client_rect_screen": [
+      -32000,
+      -32000,
+      -31840,
+      -31972
+    ],
+    "client_size": [
+      160,
+      28
+    ],
+    "dpi": 96,
+    "scale": 1.0,
+    "ex_style_hex": "0x200100",
+    "style_hex": "0x34c70000",
+    "WS_EX_TOOLWINDOW": false,
+    "WS_EX_LAYERED": false,
+    "WS_EX_TOPMOST": false,
+    "WS_EX_TRANSPARENT": false,
+    "WS_EX_NOREDIRECTIONBITMAP": true,
+    "WS_POPUP": false,
+    "WS_CAPTION": true,
+    "WS_THICKFRAME": true,
+    "dwm_corner_pref": 2
+  },
+  {
+    "hwnd": "0x106e8",
+    "hwnd_int": 67304,
+    "pid": 21224,
+    "proc": "QQ.exe",
+    "title": "MSCTFIME UI",
+    "class": "MSCTFIME UI",
+    "visible": false,
+    "minimized": false,
+    "window_rect": [
+      0,
+      0,
+      0,
+      0
+    ],
+    "window_size": [
+      0,
+      0
+    ],
+    "client_rect_screen": [
+      0,
+      0,
+      0,
+      0
+    ],
+    "client_size": [
+      0,
+      0
+    ],
+    "dpi": 96,
+    "scale": 1.0,
+    "ex_style_hex": "0x8",
+    "style_hex": "-0x74000000",
+    "WS_EX_TOOLWINDOW": false,
+    "WS_EX_LAYERED": false,
+    "WS_EX_TOPMOST": true,
+    "WS_EX_TRANSPARENT": false,
+    "WS_EX_NOREDIRECTIONBITMAP": false,
+    "WS_POPUP": true,
+    "WS_CAPTION": false,
+    "WS_THICKFRAME": false,
+    "dwm_corner_pref": 0
+  },
+  {
+    "hwnd": "0x106b2",
+    "hwnd_int": 67250,
+    "pid": 21224,
+    "proc": "QQ.exe",
+    "title": "Default IME",
+    "class": "IME",
+    "visible": false,
+    "minimized": false,
+    "window_rect": [
+      0,
+      0,
+      0,
+      0
+    ],
+    "window_size": [
+      0,
+      0
+    ],
+    "client_rect_screen": [
+      0,
+      0,
+      0,
+      0
+    ],
+    "client_size": [
+      0,
+      0
+    ],
+    "dpi": 96,
+    "scale": 1.0,
+    "ex_style_hex": "0x8",
+    "style_hex": "-0x74000000",
+    "WS_EX_TOOLWINDOW": false,
+    "WS_EX_LAYERED": false,
+    "WS_EX_TOPMOST": true,
+    "WS_EX_TRANSPARENT": false,
+    "WS_EX_NOREDIRECTIONBITMAP": false,
+    "WS_POPUP": true,
+    "WS_CAPTION": false,
+    "WS_THICKFRAME": false,
+    "dwm_corner_pref": 0
+  },
+  {
+    "hwnd": "0x3f0af2",
+    "hwnd_int": 4131570,
+    "pid": 21224,
+    "proc": "QQ.exe",
+    "title": "Default IME",
+    "class": "IME",
+    "visible": false,
+    "minimized": false,
+    "window_rect": [
+      0,
+      0,
+      0,
+      0
+    ],
+    "window_size": [
+      0,
+      0
+    ],
+    "client_rect_screen": [
+      0,
+      0,
+      0,
+      0
+    ],
+    "client_size": [
+      0,
+      0
+    ],
+    "dpi": 96,
+    "scale": 1.0,
+    "ex_style_hex": "0x0",
+    "style_hex": "-0x74000000",
+    "WS_EX_TOOLWINDOW": false,
+    "WS_EX_LAYERED": false,
+    "WS_EX_TOPMOST": false,
+    "WS_EX_TRANSPARENT": false,
+    "WS_EX_NOREDIRECTIONBITMAP": false,
+    "WS_POPUP": true,
+    "WS_CAPTION": false,
+    "WS_THICKFRAME": false,
+    "dwm_corner_pref": 0
+  },
+  {
+    "hwnd": "0x106e4",
+    "hwnd_int": 67300,
+    "pid": 24056,
+    "proc": "QQ.exe",
+    "title": "Default IME",
+    "class": "IME",
+    "visible": false,
+    "minimized": false,
+    "window_rect": [
+      0,
+      0,
+      0,
+      0
+    ],
+    "window_size": [
+      0,
+      0
+    ],
+    "client_rect_screen": [
+      0,
+      0,
+      0,
+      0
+    ],
+    "client_size": [
+      0,
+      0
+    ],
+    "dpi": 96,
+    "scale": 1.0,
+    "ex_style_hex": "0x0",
+    "style_hex": "-0x74000000",
+    "WS_EX_TOOLWINDOW": false,
+    "WS_EX_LAYERED": false,
+    "WS_EX_TOPMOST": false,
+    "WS_EX_TRANSPARENT": false,
+    "WS_EX_NOREDIRECTIONBITMAP": false,
+    "WS_POPUP": true,
+    "WS_CAPTION": false,
+    "WS_THICKFRAME": false,
+    "dwm_corner_pref": 0
+  }
+]

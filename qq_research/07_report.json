@@ -1,0 +1,9 @@
+{
+  "back_to_reading": true,
+  "sendinput_wheel3": {
+    "body_diff": 0.0,
+    "progress_diff": 0.0
+  },
+  "wheel_shift_px": -80,
+  "wheel_shift_corr": 1.0
+}

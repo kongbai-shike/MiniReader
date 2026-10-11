@@ -1,0 +1,117 @@
+{
+  "eye": {
+    "img_size": [
+      71,
+      62
+    ],
+    "tip_bbox": [
+      1,
+      31,
+      70,
+      59
+    ],
+    "tip_bg": "#262626",
+    "tip_text_color": "#9b9b9b",
+    "icon_row_bg": "#7c7c7c"
+  },
+  "opacity": {
+    "img_size": [
+      67,
+      73
+    ],
+    "tip_bbox": [
+      6,
+      39,
+      62,
+      67
+    ],
+    "tip_bg": "#262626",
+    "tip_text_color": "#979797",
+    "icon_row_bg": "#767676"
+  },
+  "pin": {
+    "img_size": [
+      88,
+      72
+    ],
+    "tip_bbox": [
+      10,
+      45,
+      81,
+      71
+    ],
+    "tip_bg": "#262626",
+    "tip_text_color": "#bababa",
+    "icon_row_bg": "#7a7a7a"
+  },
+  "context_menu": {
+    "img_size": [
+      446,
+      607
+    ],
+    "menu_bbox": [
+      23,
+      140,
+      419,
+      595
+    ],
+    "menu_bg": "#2b2b2b",
+    "menu_text_color": "#bdbdc0",
+    "menu_item_text_bands": [
+      [
+        0,
+        9
+      ],
+      [
+        36,
+        61
+      ],
+      [
+        89,
+        115
+      ],
+      [
+        142,
+        168
+      ],
+      [
+        196,
+        220
+      ],
+      [
+        231,
+        243
+      ],
+      [
+        248,
+        273
+      ],
+      [
+        284,
+        297
+      ],
+      [
+        300,
+        325
+      ],
+      [
+        353,
+        379
+      ],
+      [
+        415,
+        421
+      ],
+      [
+        422,
+        437
+      ],
+      [
+        438,
+        444
+      ]
+    ],
+    "menu_item_pitch": 36.5,
+    "bright_text_bands_top200": []
+  }
+}

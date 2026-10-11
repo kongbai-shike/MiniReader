@@ -1,0 +1,470 @@
+{
+  "window_rect_B": [
+    1329,
+    296,
+    1760,
+    916
+  ],
+  "size_B": [
+    431,
+    620
+  ],
+  "surface_rect_B": [
+    18,
+    18,
+    414,
+    602
+  ],
+  "surface_size_V": [
+    397,
+    585
+  ],
+  "corner_radius_V_est": 9,
+  "alpha": {
+    "window_bg": 0.6,
+    "card": 0.616
+  },
+  "dash_frame": {
+    "rect_B": [
+      28,
+      66,
+      404,
+      592
+    ],
+    "rect_V": [
+      10,
+      48,
+      386,
+      574
+    ],
+    "color_on_black": "#404040",
+    "color_source_est": "#6b6b6b"
+  },
+  "topbar_icons": [
+    {
+      "semantic": "后退",
+      "glyph_rect_B": [
+        37,
+        30,
+        43,
+        44
+      ],
+      "glyph_rect_V": [
+        19,
+        12,
+        25,
+        26
+      ],
+      "glyph_px": [
+        7,
+        15
+      ],
+      "center_B": [
+        40,
+        37
+      ],
+      "glyph_color_on_black": "#333333",
+      "glyph_source_est": "#555555",
+      "state": "disabled_dim"
+    },
+    {
+      "semantic": "前进",
+      "glyph_rect_B": [
+        82,
+        30,
+        88,
+        44
+      ],
+      "glyph_rect_V": [
+        64,
+        12,
+        70,
+        26
+      ],
+      "glyph_px": [
+        7,
+        15
+      ],
+      "center_B": [
+        85,
+        37
+      ],
+      "glyph_color_on_black": "#353535",
+      "glyph_source_est": "#585858",
+      "state": "disabled_dim",
+      "pitch_to_prev_B": 45
+    },
+    {
+      "semantic": "隐身",
+      "glyph_rect_B": [
+        210,
+        31,
+        226,
+        43
+      ],
+      "glyph_rect_V": [
+        192,
+        13,
+        208,
+        25
+      ],
+      "glyph_px": [
+        17,
+        13
+      ],
+      "center_B": [
+        218,
+        37
+      ],
+      "glyph_color_on_black": "#909090",
+      "glyph_source_est": "#f0f0f0",
+      "state": "active",
+      "pitch_to_prev_B": 133
+    },
+    {
+      "semantic": "透明度调节",
+      "glyph_rect_B": [
+        254,
+        31,
+        269,
+        43
+      ],
+      "glyph_rect_V": [
+        236,
+        13,
+        251,
+        25
+      ],
+      "glyph_px": [
+        16,
+        13
+      ],
+      "center_B": [
+        261,
+        37
+      ],
+      "glyph_color_on_black": "#939393",
+      "glyph_source_est": "#f5f5f5",
+      "state": "active",
+      "pitch_to_prev_B": 43
+    },
+    {
+      "semantic": "置顶",
+      "glyph_rect_B": [
+        298,
+        30,
+        312,
+        44
+      ],
+      "glyph_rect_V": [
+        280,
+        12,
+        294,
+        26
+      ],
+      "glyph_px": [
+        15,
+        15
+      ],
+      "center_B": [
+        305,
+        37
+      ],
+      "glyph_color_on_black": "#838383",
+      "glyph_source_est": "#dadada",
+      "state": "active",
+      "pitch_to_prev_B": 44
+    },
+    {
+      "semantic": "最小化",
+      "glyph_rect_B": [
+        339,
+        37,
+        355,
+        38
+      ],
+      "glyph_rect_V": [
+        321,
+        19,
+        337,
+        20
+      ],
+      "glyph_px": [
+        17,
+        2
+      ],
+      "center_B": [
+        347,
+        37
+      ],
+      "glyph_color_on_black": "#939393",
+      "glyph_source_est": "#f5f5f5",
+      "state": "active",
+      "pitch_to_prev_B": 42
+    },
+    {
+      "semantic": "关闭",
+      "glyph_rect_B": [
+        384,
+        31,
+        396,
+        43
+      ],
+      "glyph_rect_V": [
+        366,
+        13,
+        378,
+        25
+      ],
+      "glyph_px": [
+        13,
+        13
+      ],
+      "center_B": [
+        390,
+        37
+      ],
+      "glyph_color_on_black": "#8b8b8b",
+      "glyph_source_est": "#e8e8e8",
+      "state": "active",
+      "pitch_to_prev_B": 43
+    }
+  ],
+  "topbar": {
+    "glyph_band_V": [
+      12,
+      26
+    ],
+    "glyph_height_V": 15,
+    "left_inset_V": 19,
+    "right_inset_V": 18,
+    "back_forward_pitch_V": 45,
+    "right_group_pitch_V": [
+      133,
+      43,
+      44,
+      42,
+      43
+    ],
+    "drag_area_V": [
+      71,
+      8,
+      191,
+      30
+    ],
+    "same_bg_as_body": true
+  },
+  "heading_lines": [
+    {
+      "rect_B": [
+        101,
+        289,
+        331,
+        310
+      ],
+      "rect_V": [
+        83,
+        271,
+        313,
+        292
+      ],
+      "h_px": 22,
+      "color_on_black": "#adadad",
+      "color_source_est": "#ffffff"
+    },
+    {
+      "rect_B": [
+        145,
+        323,
+        287,
+        344
+      ],
+      "rect_V": [
+        127,
+        305,
+        269,
+        326
+      ],
+      "h_px": 22,
+      "color_on_black": "#afafaf",
+      "color_source_est": "#ffffff"
+    }
+  ],
+  "subtitle_divider": {
+    "text_rect_B": [
+      158,
+      375,
+      274,
+      388
+    ],
+    "text_rect_V": [
+      140,
+      357,
+      256,
+      370
+    ],
+    "text_color_on_black": "#747474",
+    "text_source_est": "#c1c1c1",
+    "line_y_B": 382,
+    "line_y_V": 364,
+    "line_segments_B": [
+      [
+        72,
+        147
+      ],
+      [
+        285,
+        360
+      ]
+    ],
+    "line_color_on_black": "#1f1f1f"
+  },
+  "cards": [
+    {
+      "label": "聊天",
+      "rect_B": [
+        77,
+        415,
+        163,
+        500
+      ],
+      "rect_V": [
+        59,
+        397,
+        145,
+        482
+      ],
+      "size_B": [
+        87,
+        86
+      ],
+      "fill_on_black": "#181818",
+      "fill_source_est": "#272727",
+      "gap_prev_B": null,
+      "label_color_on_black": "#727272",
+      "icon_rect_B": [
+        109,
+        432,
+        131,
+        454
+      ],
+      "icon_color_on_black": "#868686"
+    },
+    {
+      "label": "小说",
+      "rect_B": [
+        173,
+        415,
+        259,
+        500
+      ],
+      "rect_V": [
+        155,
+        397,
+        241,
+        482
+      ],
+      "size_B": [
+        87,
+        86
+      ],
+      "fill_on_black": "#181818",
+      "fill_source_est": "#272727",
+      "gap_prev_B": 9,
+      "label_color_on_black": "#717171",
+      "icon_rect_B": [
+        203,
+        431,
+        230,
+        453
+      ],
+      "icon_color_on_black": "#959595"
+    },
+    {
+      "label": "自选股",
+      "rect_B": [
+        269,
+        415,
+        355,
+        500
+      ],
+      "rect_V": [
+        251,
+        397,
+        337,
+        482
+      ],
+      "size_B": [
+        87,
+        86
+      ],
+      "fill_on_black": "#181818",
+      "fill_source_est": "#272727",
+      "gap_prev_B": 9,
+      "label_color_on_black": "#787878",
+      "icon_rect_B": [
+        301,
+        432,
+        323,
+        454
+      ],
+      "icon_color_on_black": "#868686"
+    }
+  ],
+  "phone_illustration": {
+    "rect_B": [
+      183,
+      156,
+      250,
+      251
+    ],
+    "rect_V": [
+      165,
+      138,
+      232,
+      233
+    ],
+    "color_on_black": "#939393",
+    "color_source_est": "#f5f5f5"
+  },
+  "palette": {
+    "window_bg_source": "#1b1b1b",
+    "window_bg_source_rgb": [
+      27,
+      27,
+      27
+    ],
+    "window_bg_alpha": 0.6,
+    "window_bg_on_black": "#101010",
+    "dash": "#404040",
+    "dash_source": "#6b6b6b",
+    "heading": "#adadad",
+    "heading_source": "#ffffff",
+    "subtitle": "#747474",
+    "divider_line": "#1f1f1f",
+    "card_fill": "#181818",
+    "card_fill_source": "#272727",
+    "card_label": "#727272",
+    "card_icon": "#868686",
+    "active_icon": "#909090",
+    "disabled_arrow": "#333333",
+    "phone_illustration": "#939393"
+  },
+  "crops": [
+    "c:\\Users\\pc\\Desktop\\随手文件\\MiniReader\\qq_research\\03_crop_topbar_3x.png",
+    "c:\\Users\\pc\\Desktop\\随手文件\\MiniReader\\qq_research\\03_crop_frame_corner_4x.png",
+    "c:\\Users\\pc\\Desktop\\随手文件\\MiniReader\\qq_research\\03_icon_0_后退_4x.png",
+    "c:\\Users\\pc\\Desktop\\随手文件\\MiniReader\\qq_research\\03_icon_1_前进_4x.png",
+    "c:\\Users\\pc\\Desktop\\随手文件\\MiniReader\\qq_research\\03_icon_2_隐身_4x.png",
+    "c:\\Users\\pc\\Desktop\\随手文件\\MiniReader\\qq_research\\03_icon_3_透明度调节_4x.png",
+    "c:\\Users\\pc\\Desktop\\随手文件\\MiniReader\\qq_research\\03_icon_4_置顶_4x.png",
+    "c:\\Users\\pc\\Desktop\\随手文件\\MiniReader\\qq_research\\03_icon_5_最小化_4x.png",
+    "c:\\Users\\pc\\Desktop\\随手文件\\MiniReader\\qq_research\\03_icon_6_关闭_4x.png",
+    "c:\\Users\\pc\\Desktop\\随手文件\\MiniReader\\qq_research\\03_heading_289.png",
+    "c:\\Users\\pc\\Desktop\\随手文件\\MiniReader\\qq_research\\03_heading_323.png",
+    "c:\\Users\\pc\\Desktop\\随手文件\\MiniReader\\qq_research\\03_subtitle_divider_2x.png",
+    "c:\\Users\\pc\\Desktop\\随手文件\\MiniReader\\qq_research\\03_card_聊天_3x.png",
+    "c:\\Users\\pc\\Desktop\\随手文件\\MiniReader\\qq_research\\03_card_小说_3x.png",
+    "c:\\Users\\pc\\Desktop\\随手文件\\MiniReader\\qq_research\\03_card_自选股_3x.png"
+  ]
+}

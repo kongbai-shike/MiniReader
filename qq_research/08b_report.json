@@ -1,0 +1,17 @@
+{
+  "baseline": {
+    "lines": 9,
+    "glyph_h": 22.3,
+    "pitch": 48.1
+  },
+  "after_aminus": {
+    "lines": 7,
+    "glyph_h": 12.6,
+    "pitch": 58.7
+  },
+  "after_aplus": {
+    "lines": 7,
+    "glyph_h": 12.6,
+    "pitch": 58.7
+  }
+}
