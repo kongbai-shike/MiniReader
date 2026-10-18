@@ -27,6 +27,26 @@ try:
 except ImportError:  # pragma: no cover - 只在没装 PyInstaller 时发生
     raise SystemExit("需要 pefile（随 PyInstaller 一起装）：py -3.12 -m pip install pyinstaller")
 
+
+def force_utf8_console() -> None:
+    """让结论行里的 `✓` / `✗` 在中文 Windows 上不被代码页吃掉。
+
+    cmd.exe 默认代码页 936，编不出 U+2713 / U+2717，`print` 会直接
+    `UnicodeEncodeError`——那会让「检查通过」这件事本身变成一次崩溃。
+    做法与 `minireader/__main__.py::_force_utf8_console()` 相同。
+    """
+    try:
+        import ctypes
+
+        if sys.platform == "win32":
+            ctypes.windll.kernel32.SetConsoleOutputCP(65001)
+        for stream in (sys.stdout, sys.stderr):
+            reconfigure = getattr(stream, "reconfigure", None)
+            if reconfigure is not None:
+                reconfigure(encoding="utf-8", errors="replace")
+    except Exception:  # noqa: BLE001 - output formatting must never break the check
+        pass
+
 # 这些前缀是 Windows 的 API Set（虚拟 DLL 名）和系统 DLL，永远由系统提供。
 _SYSTEM_PREFIXES = ("api-ms-win-", "ext-ms-win-")
 _ALWAYS_SYSTEM = {
@@ -51,6 +71,7 @@ def system_dir() -> Path:
 
 
 def main(argv: list[str]) -> int:
+    force_utf8_console()
     root = Path(argv[1]).resolve() if len(argv) > 1 else Path("dist/MiniReader/_internal").resolve()
     if not root.exists():
         raise SystemExit(f"找不到目录：{root}")

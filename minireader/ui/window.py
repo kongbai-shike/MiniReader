@@ -57,13 +57,28 @@ import os
 
 from .. import snap as snapmod
 from .. import win32
-from ..core.model import Book, BookError, Progress, human_size
+from ..core.book_base import KIND_COMIC, KIND_TEXT
+from ..core.formats import DUAL_IDENTITY_EXTS, _ext_of, dialog_filters, support_note
+from ..core.images import folder_has_images
+from ..core.model import Book, BookError, Progress, book_id, human_size
+from ..core.opener import (
+    PDF_COMIC,
+    PDF_TEXT,
+    open_book,
+    open_book_kind,
+    pdf_choice,
+)
 from ..hotkeys import format_hotkey, register_all
 from ..qt import (
+    EDGE_BOTTOM,
+    EDGE_LEFT,
+    EDGE_RIGHT,
+    EDGE_TOP,
     QApplication,
     QBrush,
     QColor,
     QCursor,
+    QDialog,
     QEasingCurve,
     QEvent,
     QFileDialog,
@@ -77,10 +92,13 @@ from ..qt import (
     QPainterPath,
     QPoint,
     QPropertyAnimation,
+    QPushButton,
     QRect,
     QRectF,
+    QScrollBar,
     QSizePolicy,
     QSlider,
+    QStackedWidget,
     QTimer,
     QToolButton,
     QToolTip,
@@ -99,6 +117,7 @@ from ..storage import (
     Library,
     ProgressStore,
     Settings,
+    _as_int,
     alpha_to_percent,
     data_dir,
     default_geometry,
@@ -106,9 +125,12 @@ from ..storage import (
     validate_geometry,
 )
 from .autoscroll import AutoScroller
+from .comic_cache import DEFAULT_CACHE_MB
+from .comic_reader import PRELOAD_RADIUS, ComicReader
 from .reader import ReaderView
 from .settings_dialog import SettingsDialog
-from .theme import PALETTE
+from . import theme
+from .theme import ACTIVE_EXTRAS, PALETTE
 from .toc_panel import TocPanel
 
 FRAME = 4           # width of the uncovered border: frame + resize hot zone
@@ -160,28 +182,42 @@ TOOLTIP_LEAVE_HIDE_OFF = "开启隐身"
 TOOLTIP_PIN_ON = "取消置顶"
 TOOLTIP_PIN_OFF = "置顶"
 
-READER_MENU_QSS = """
-QMenu {
-    background: #2b2b2b; color: #bdbdc0;
-    border: 1px solid #3a3a3a; border-radius: 8px;
+# 主题的中文名（定义在 theme.py：设置对话框也要用，而它是被本模块 import 的）。
+
+def reader_menu_qss() -> str:
+    """正文右键菜单的 QSS。
+
+    阶段 3 的实测规格是「底 #2b2b2b、字 #bdbdc0、项高 40px、圆角 6-8px」，
+    这些颜色现在从 `theme.ACTIVE_EXTRAS` 取——它们不属于 11 键调色板（是"某一档
+    亮度"而不是语义角色），但同样必须随主题走，否则白昼下菜单还是黑底。
+
+    **必须是函数**：模块级常量在 import 时就把颜色插值定死了，切主题不会重算。
+    """
+    x = ACTIVE_EXTRAS
+    return f"""
+QMenu {{
+    background: {x['menu_bg']}; color: {x['menu_fg']};
+    border: 1px solid {x['menu_border']}; border-radius: 8px;
     padding: 6px; margin: 0; font-size: 13px;
-}
-QMenu::item {
-    background: transparent; color: #bdbdc0;
+}}
+QMenu::item {{
+    background: transparent; color: {x['menu_fg']};
     border-radius: 6px; margin: 0; padding: 0 18px;
     min-height: 40px;
-}
-QMenu::item:selected { background: #3a3a3a; color: #bdbdc0; }
-QMenu::item:disabled { background: transparent; color: #6f6f72; }
-QMenu::separator { height: 1px; background: #3a3a3a; margin: 4px 8px; }
-QMenu::icon { left: 0; width: 0; }
+}}
+QMenu::item:selected {{ background: {x['menu_hover']}; color: {x['menu_fg']}; }}
+QMenu::item:disabled {{ background: transparent; color: {x['menu_disabled']}; }}
+QMenu::separator {{ height: 1px; background: {x['menu_border']}; margin: 4px 8px; }}
+QMenu::icon {{ left: 0; width: 0; }}
 """
+
 
 HOTKEY_LABELS = {name: label for name, _field, label in HOTKEY_FIELDS}
 
 
 def _qss() -> str:
     p = PALETTE
+    x = ACTIVE_EXTRAS
     # 顶层窗口的背景不在这里：它由 paintEvent 画（见 MiniWindow.paintEvent）。
     # 标题栏/状态栏一律透明，把窗口的圆角底色透出来——这样 alpha=0 时整窗只剩文字，
     # 桌面直接透过来，而不是留下两条不透明的横杠。
@@ -198,18 +234,18 @@ def _qss() -> str:
     #StatusBar QToolButton {{
         font-size: 14px; min-height: 28px; padding: 2px 8px;
     }}
-    /* 底栏两端的翻页胶囊：QQ 实测 87×29、圆角 14px、1px #6e6e6f 描边、文字 #a3a3a3。
+    /* 底栏两端的翻页胶囊：QQ 实测 87×29、圆角 14px、1px 描边、文字实测色。
        ID 选择器压过上面的通用钮规则（边框/字号/内边距都以这里为准），文字 13px 满足
        可读性下限；:hover 只提亮底色，不动文字色（和顶栏悬停块同一条原则）。
        注意 QSS 的 min-width 是**内容盒**：73 + 左右 padding 12 + 边框 2 = 87px 整宽，
        正好等于规格命中区宽度，不是随手写的 87（那样实际会变成 109px 把底栏顶爆）。 */
     QToolButton#PrevPageButton, QToolButton#NextPageButton {{
-        color: #a3a3a3; background: transparent;
-        border: 1px solid #6e6e6f; border-radius: 14px;
+        color: {x['capsule_fg']}; background: transparent;
+        border: 1px solid {x['capsule_border']}; border-radius: 14px;
         min-width: 73px; min-height: 27px; padding: 0 6px; font-size: 13px;
     }}
     QToolButton#PrevPageButton:hover, QToolButton#NextPageButton:hover {{
-        background: {p['hover']}; border: 1px solid #6e6e6f; border-radius: 14px;
+        background: {p['hover']}; border: 1px solid {x['capsule_border']}; border-radius: 14px;
     }}
     QToolButton#PrevPageButton:disabled, QToolButton#NextPageButton:disabled {{
         color: {p['faint']}; border: 1px solid {p['border']}; border-radius: 14px;
@@ -220,14 +256,62 @@ def _qss() -> str:
 
 
 # QToolTip 是顶层窗口，只认 QApplication 级样式表——挂在窗口样式表上不会生效。
-# 对齐 QQ 实测：底 #262626、字 #9b9b9b、圆角 3px、padding 4×8。1px 同色描边是为了
-# 强制 Qt 走 QSS 渲染路径（没有这个 border，Windows 上会回落到系统原生气泡）。
-TOOLTIP_QSS = """
-/* MiniReaderTooltip */
-QToolTip {
-    background: #262626; color: #9b9b9b;
-    border: 1px solid #262626; border-radius: 3px; padding: 4px 8px;
-}
+# 对齐 QQ 实测：圆角 3px、padding 4×8，颜色取自 theme。1px 同色描边是为了强制 Qt
+# 走 QSS 渲染路径（没有这个 border，Windows 上会回落到系统原生气泡）。
+# 幂等标记 `/* MiniReaderTooltip */` 由 `_install_tooltip_theme()` 负责摘挂。
+TOOLTIP_MARKER = "/* MiniReaderTooltip */"
+
+
+def tooltip_qss() -> str:
+    """tooltip 的 QSS。**必须是函数**，理由同 `reader_menu_qss()`。"""
+    x = ACTIVE_EXTRAS
+    return f"""
+{TOOLTIP_MARKER}
+QToolTip {{
+    background: {x['tooltip_bg']}; color: {x['tooltip_fg']};
+    border: 1px solid {x['tooltip_border']}; border-radius: 3px; padding: 4px 8px;
+}}
+"""
+
+
+def _install_tooltip_theme(app) -> None:
+    """把 tooltip 样式挂到 QApplication 上，**先摘旧块再挂新块**。
+
+    这里曾经是 `if "MiniReaderTooltip" not in app.styleSheet(): 追加`。那个写法在
+    单主题下是对的（幂等，多窗口不会重复追加），但切主题时标记还在，新颜色永远挂
+    不进去——结果是主窗变白、tooltip 仍然黑底。所以必须先按标记把旧块切掉。
+
+    只认 QApplication 级样式表：QToolTip 是顶层窗口，挂在窗口样式表上不生效。
+    """
+    if app is None:
+        return
+    sheet = app.styleSheet()
+    if TOOLTIP_MARKER in sheet:
+        sheet = sheet[: sheet.index(TOOLTIP_MARKER)].rstrip()
+    app.setStyleSheet(sheet + tooltip_qss())
+
+
+def pdf_ask_qss() -> str:
+    """PDF 询问框的 QSS：与设置对话框同一套层级（panel 底、card 面、field 控件），
+    但只有一行正文和三个按钮，所以不复用 _stylesheet() 那 100 多行。
+
+    **必须是函数**：原来这里是 f-string 常量，`{PALETTE['panel']}` 在 import 时
+    就已经插值定死，切主题不会重算。
+    """
+    p = PALETTE
+    x = ACTIVE_EXTRAS
+    return f"""
+QDialog {{ background: {p['panel']}; }}
+QLabel#AskHeading {{ color: {p['fg']}; font-size: 13px; font-weight: bold; }}
+QLabel#AskBody {{ color: {p['muted']}; font-size: 12px; }}
+QPushButton {{
+    background: {p['field']}; color: {p['fg']};
+    border: 1px solid {p['border']}; border-radius: 4px;
+    padding: 6px 16px; font-size: 13px; min-width: 80px; min-height: 32px;
+}}
+QPushButton:hover {{ background: {p['border']}; }}
+QPushButton:pressed {{ background: {x['pressed_bg']}; }}
+QPushButton:default {{ border: 1px solid {p['accent']}; }}
 """
 
 
@@ -452,6 +536,76 @@ def _excerpt(body: str, offset: int, limit: int = EXCERPT_CHARS) -> str:
     return text
 
 
+class PdfKindDialog(QDialog):
+    """「这本书判不出来」的一次性询问：文本 / 漫画。
+
+    只在 `pdfdoc.classify()` 给出 `needs_ask` 时出现——正文密度和图片覆盖率都低到
+    什么都说明不了（只有封面的 PDF、空白模板、用矢量画的漫画）。别的 PDF 一律静默
+    打开，问一次是例外而不是流程。
+
+    用 QDialog 而不是 QMessageBox：两个按钮是**并列**的两个答案，不是「确定/取消」，
+    而 QMessageBox 的按钮盒会按平台把其中一个渲染成主按钮。这里谁也不是主按钮。
+    """
+
+    def __init__(self, title: str, parent=None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("这本书按哪种方式打开")
+        self.setStyleSheet(pdf_ask_qss())
+        self.setModal(True)
+        self.setMinimumWidth(360)
+        self._choice: str | None = None
+
+        root = QVBoxLayout(self)
+        root.setContentsMargins(18, 16, 18, 16)
+        root.setSpacing(12)
+
+        heading = QLabel(f"《{title}》判不出来是文本还是漫画。")
+        heading.setObjectName("AskHeading")
+        heading.setWordWrap(True)
+        root.addWidget(heading)
+
+        body = QLabel(
+            "这本书里既没有多少可提取的文字，也没有整页的图片。\n"
+            "选「按文本」会像小说一样分页排版；选「按漫画」会把每页当图片显示。\n"
+            "选过一次以后，这本书就一直按它打开，不再问。"
+        )
+        body.setObjectName("AskBody")
+        body.setWordWrap(True)
+        root.addWidget(body)
+
+        buttons = QHBoxLayout()
+        buttons.setContentsMargins(0, 0, 0, 0)
+        buttons.setSpacing(8)
+        buttons.addStretch(1)
+        self.text_button = QPushButton("按文本")
+        self.comic_button = QPushButton("按漫画")
+        self.cancel_button = QPushButton("取消")
+        # 默认焦点给"按文本"：它也是取消时的结果，键盘用户按 Enter 得到的和按 Esc
+        # 得到的一致，不会出现"回车打开方式与预期不符"。
+        self.text_button.setDefault(True)
+        self.text_button.clicked.connect(lambda: self._pick(PDF_TEXT))
+        self.comic_button.clicked.connect(lambda: self._pick(PDF_COMIC))
+        self.cancel_button.clicked.connect(self.reject)
+        for button in (self.text_button, self.comic_button, self.cancel_button):
+            buttons.addWidget(button)
+        root.addLayout(buttons)
+
+    def _pick(self, kind: str) -> None:
+        """Remember the answer, then accept.
+
+        The answer rides on an attribute rather than on the dialog's result code
+        because `exec_dialog()` answers one question - accepted or not - and
+        tests stub it at the module level. Keeping the payload out of the result
+        code means the stub only has to click a button and return True.
+        """
+        self._choice = kind
+        self.accept()
+
+    def choice(self) -> str | None:
+        """`PDF_TEXT` / `PDF_COMIC`, or None when the dialog was dismissed."""
+        return self._choice
+
+
 class MiniWindow(QWidget):
     """Owns the book, the reader, and every piece of persisted state."""
 
@@ -498,6 +652,11 @@ class MiniWindow(QWidget):
         self._resize_start_pos = None
         self._resize_start_geom = None
         self._dialog_open = False
+        # 打开中的设置对话框（没有就是 None）。顶栏 🌙 与设置页下拉是两个入口，
+        # 靠它把主题状态互相灌过去，免得两处显示不一致。
+        self._settings_dialog = None
+        # 打开设置对话框那一刻的主题。下拉是实时预览（不落盘），取消时要切回这里。
+        self._theme_before_dialog = theme.CURRENT
         # 🎚 的快捷浮层。懒创建：不点开就一直不存在，省得每次启动都多一个原生窗口。
         self._opacity_popup = None
         # 鼠标移出隐身的账本。None = 当前没处于移出隐身；非 None = 隐身前的用户设置值，
@@ -547,19 +706,27 @@ class MiniWindow(QWidget):
         self._opacity_anim.setEasingCurve(QEasingCurve.OutCubic)
         self._target_opacity = 100
 
+        # `_filtered_viewport` / `_autoscroll_bar` 是 `_install_view_filter()` 和
+        # `_bind_autoscroller()` 的记账：它们都靠"和上次不一样才动"来避免重复安装。
+        # 必须在 `_build_ui()` **之前**就有初值——`_build_ui()` 里构造 ComicReader
+        # 时会接上 `viewportChanged`，而 `apply_comic_settings()` 可能在构造期就切
+        # 模式，那时 `_rebind_reader_views()` 已经会被调用。
+        self._filtered_viewport = None
+        self._autoscroll_bar = None
+        self.autoscroller = None
+        # 没有可滚动条时的替身（见 `_bind_autoscroller`）：范围 (0,0) 的真条，
+        # 让 AutoScroller 永远拿得到一根能读 value() 的东西。
+        self._parked_bar = QScrollBar(Qt.Vertical, self)
+        self._parked_bar.setRange(0, 0)
+        self._parked_bar.setVisible(False)
+
         self._build_ui()
         # 滚动器只拿正文的滚动条，不拿 ReaderView 本身：这样它和滚轮的缓动动画
         # （_animate_to / _cancel_anim）没有任何耦合，谁动滚动条谁负责，不会互相取消。
-        self.autoscroller = AutoScroller(self.reader.verticalScrollBar(), parent=self)
-        self.autoscroller.reachedEnd.connect(self._on_autoscroll_end)
-        self.autoscroller.stopped.connect(self._sync_autoscroll_button)
-        self.apply_autoscroll_settings()
+        self._bind_autoscroller(self.reader.scrollbar())
         # 鼠标停在正文上时暂停：读者把鼠标移回窗口通常就是想手动滚一下或者看一眼，
-        # 此时文字还在自己走会很难受。
-        self.reader.viewport().installEventFilter(self)
-        # 正文左/右缘 8px 被 viewport 盖着；开追踪后 eventFilter 才能在不按键悬停时
-        # 把那一条上的光标换成左右缩放形状（见 _route_edge_event）。
-        self.reader.viewport().setMouseTracking(True)
+        # 此时文字还在自己走会很难受。边缘缩放热区也走同一个过滤器。
+        self._install_view_filter(self.reader.viewport())
         self._restore_geometry()
         self.apply_disguise()
         self.apply_opacity(self.settings.target_opacity(active=True), animate=False)
@@ -625,6 +792,46 @@ class MiniWindow(QWidget):
         self.autoscroll_button.clicked.connect(self.toggle_autoscroll)
         self.autoscroll_button.setMinimumSize(TITLE_BTN_MIN, TITLE_BTN_MIN)
         bar_layout.addWidget(self.autoscroll_button)
+
+        # 外观主题：点一下切到下一档（暗夜 ⇄ 白昼）。**不是开关**——两个主题没有
+        # "开/关"的语义，所以 setCheckable(False)，按一下就切一次。
+        # 立即生效，只走 apply_background() 那条通道，不碰 windowFlags/setPalette。
+        self.theme_button = QToolButton()
+        self.theme_button.setText("🌙")
+        self.theme_button.setCheckable(False)
+        self.theme_button.setMinimumSize(TITLE_BTN_MIN, TITLE_BTN_MIN)
+        self.theme_button.clicked.connect(self.toggle_theme)
+        bar_layout.addWidget(self.theme_button)
+
+        # 漫画专属的两个循环切换钮。放标题栏而不是 30px 底栏：底栏已经有"翻页/目录/设置"
+        # 三组控件，还有一条"397px 宽下三组不重叠"的既有断言，塞不下第四个。
+        # 文本模式下 setVisible(False)，不参与布局——所以文本模式的标题栏和改动前逐像素
+        # 一致，既有布局测试一条都不用改。文案/提示由 ComicReader 提供，两处口径唯一。
+        self.comic_mode_button = QToolButton()
+        self.comic_mode_button.setText("▭")
+        self.comic_mode_button.setToolTip("阅读模式：单页")
+        self.comic_mode_button.clicked.connect(self.cycle_comic_mode)
+        self.comic_mode_button.setMinimumSize(TITLE_BTN_MIN, TITLE_BTN_MIN)
+        self.comic_mode_button.setVisible(False)
+        bar_layout.addWidget(self.comic_mode_button)
+
+        self.comic_zoom_button = QToolButton()
+        self.comic_zoom_button.setText("↔")
+        self.comic_zoom_button.setToolTip("缩放：宽度适应")
+        self.comic_zoom_button.clicked.connect(self.cycle_comic_zoom)
+        self.comic_zoom_button.setMinimumSize(TITLE_BTN_MIN, TITLE_BTN_MIN)
+        self.comic_zoom_button.setVisible(False)
+        bar_layout.addWidget(self.comic_zoom_button)
+
+        # 装订方向。只有双页模式才看得出左右，所以只在模式 C 显示——在单页/连续滚动里
+        # 它不改变任何像素，放一个按了没反应的按钮比不放更糟。
+        self.comic_binding_button = QToolButton()
+        self.comic_binding_button.setText("右")
+        self.comic_binding_button.setToolTip("装订方向：右綴じ（小页码在右）")
+        self.comic_binding_button.clicked.connect(self.cycle_comic_binding)
+        self.comic_binding_button.setMinimumSize(TITLE_BTN_MIN, TITLE_BTN_MIN)
+        self.comic_binding_button.setVisible(False)
+        bar_layout.addWidget(self.comic_binding_button)
 
         # 中：拖拽区。TitleBar 自己实现 mousePressEvent，按住空白处就能拖窗口；按钮是
         # 它的子控件，所以按在按钮上不会误触发拖动。书名显示在这条上（伪装标题也走它）。
@@ -705,12 +912,33 @@ class MiniWindow(QWidget):
         self.toc_panel.closed.connect(self.close_toc)
         body_layout.addWidget(self.toc_panel)
 
-        self.reader = ReaderView(self.body)
-        self.reader.chapterRequested.connect(self.step_chapter)
-        self.reader.scrolled.connect(self._on_scrolled)
+        # 两个 Reader 全程存活，切换只换 QStackedWidget 的索引（见 _select_reader）。
+        # 不用"销毁重建"是因为重建要重新接信号、重新装事件过滤器、重新 apply_style，
+        # 任何一处漏掉都是静默的行为退化；而两个控件的常驻内存代价可以忽略。
+        self._reader_stack = QStackedWidget(self.body)
+        self._reader_stack.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+
+        self._text_reader = ReaderView(self._reader_stack)
+        self._text_reader.chapterRequested.connect(self.step_chapter)
+        self._text_reader.scrolled.connect(self._on_scrolled)
         # 阶段 3：正文右键菜单。坐标原样透传——菜单必须出现在右键点。
-        self.reader.contextMenuRequested.connect(self.show_reader_menu)
-        body_layout.addWidget(self.reader, 1)
+        self._text_reader.contextMenuRequested.connect(self.show_reader_menu)
+
+        self._comic_reader = ComicReader(self._reader_stack)
+        self._comic_reader.scrolled.connect(self._on_scrolled)
+        self._comic_reader.contextMenuRequested.connect(self.show_reader_menu)
+        self._comic_reader.notice.connect(self.set_warning)
+        # 换模式会换掉 `viewport()` 返回的控件（单页是 PageView，连续滚动是那个
+        # QScrollArea），装在它上面的边缘缩放过滤器必须跟着搬。reader 负责说"换了"，
+        # 窗口负责搬——漏掉这一步，模式 B 下 4px 边框的缩放热区会静默失效。
+        self._comic_reader.viewportChanged.connect(self._rebind_reader_views)
+
+        self._reader_stack.addWidget(self._text_reader)
+        self._reader_stack.addWidget(self._comic_reader)
+        # self.reader 始终指向"当前生效的那个"，属性名不变：窗口里 25 处调用点、
+        # 以及十几条既有测试都按这个名字取正文控件。
+        self.reader = self._text_reader
+        body_layout.addWidget(self._reader_stack, 1)
         root.addWidget(self.body, 1)
         self._build_reader_menu()
 
@@ -726,8 +954,8 @@ class MiniWindow(QWidget):
         # 元素之间留白 ≥8px（可读性硬性要求），按钮自身的 padding 另算。
         status_layout.setSpacing(8)
 
-        # 左：翻页胶囊（映射现有 step_chapter 逻辑——当前一"页"就是一章；正文里的
-        # 滚轮翻页/右键菜单是阶段 3 的事）。87×29、圆角 14、#6e6e6f 描边、#a3a3a3 字。
+        # 左：翻页胶囊。文本模式翻章、漫画模式翻页——同一个 step_chapter 按书的分派
+        # 决定翻的是章还是页，按钮本身不需要知道手里是哪一种书。
         self.prev_button = QToolButton()
         self.prev_button.setObjectName("PrevPageButton")
         self.prev_button.setText("‹ 上一页")
@@ -815,16 +1043,74 @@ class MiniWindow(QWidget):
         self.reader.apply_style(self.settings)
         self.apply_background()
         self.apply_content_alpha()
+        # 漫画侧的设置（缓存预算、预加载、默认模式与缩放）在这里落一次，让第一本
+        # 漫画就用上用户的选择，而不是等打开设置对话框才生效。
+        self.apply_comic_settings()
+        # 🌙 的提示文案是双态的（点一下切到哪一档），首帧就要对。
+        self._sync_theme_controls()
         self._show_placeholder()
 
     def _apply_theme(self) -> None:
         # 只给标题栏/状态栏/按钮上色，绝不涉及窗口背景——背景归 paintEvent。
         self.setStyleSheet(_qss())
-        # QToolTip 是顶层窗口，只吃 QApplication 级样式表。幂等：marker 已在就不重复挂，
-        # 多个窗口/多次 _apply_theme 不会把 QSS 越拼越长。
-        app = QApplication.instance()
-        if app is not None and "MiniReaderTooltip" not in app.styleSheet():
-            app.setStyleSheet(app.styleSheet() + TOOLTIP_QSS)
+        # 右键菜单是长生命周期对象，样式表只在建的时候挂一次，切主题要重挂。
+        menu = getattr(self, "reader_menu", None)
+        if menu is not None:
+            menu.setStyleSheet(reader_menu_qss())
+        # QToolTip 是顶层窗口，只吃 QApplication 级样式表。
+        _install_tooltip_theme(QApplication.instance())
+
+    def apply_theme(self, name: str, *, persist: bool = True) -> str:
+        """切换窗口外观主题（dark / light）。立即生效，返回真正生效的主题名。
+
+        **只走 apply_background() 那条通道**：本方法改的是样式表与自绘颜色，
+        窗口本身（windowFlags / setPalette / WA_TranslucentBackground）一个字不碰——
+        这三样在无边框 + 半透明顶层窗上都会触发原生窗口重建，是崩溃老巢。
+
+        与透明度正交：`bg_alpha` 决定底色 alpha，`content_alpha` 决定正文 alpha，
+        主题只决定 RGB。paintEvent 一个字不改。
+
+        「体贴规则」：正文配色（Settings.bg/fg）默认**不**跟着主题走，因为那是用户
+        自己的选择；只有当它还等于**原主题**的默认值时才顺手跟过去——那说明用户
+        从没动过它。改过的配色一律保留（见 theme.READ_DEFAULTS）。
+        """
+        previous = theme.CURRENT
+        resolved = theme.apply_theme(name)
+        self.settings.theme = resolved
+
+        old_bg, old_fg = theme.read_defaults(previous)
+        if (self.settings.bg, self.settings.fg) == (old_bg, old_fg):
+            self.settings.bg, self.settings.fg = theme.read_defaults(resolved)
+
+        self._apply_theme()
+        # 只改 self.bg_color + update()，不碰任何窗口属性。
+        self.apply_background()
+        # 正文选中底色与文字色随主题走；apply_style 会保留字符锚点。
+        self.reader.apply_style(self.settings)
+        # 目录高亮条是 paint 出来的，得让面板重画。
+        self._refresh_toc()
+        self._sync_theme_controls()
+        if persist:
+            self.settings.save(self._settings_path)
+        return resolved
+
+    def _sync_theme_controls(self) -> None:
+        """把当前主题同步到顶栏 🌙 与设置页下拉（两处入口必须一致）。"""
+        name = theme.CURRENT
+        label = theme.THEME_LABELS.get(name, name)
+        button = getattr(self, "theme_button", None)
+        if button is not None:
+            button.setToolTip(
+                f"外观主题：{label}（点一下切到{theme.THEME_LABELS.get(theme.next_theme(name), '')}）"
+            )
+        # 设置对话框若正开着，把它那页下拉也刷成当前主题——两个入口必须同步。
+        dialog = getattr(self, "_settings_dialog", None)
+        if dialog is not None:
+            dialog.sync_theme(theme.CURRENT)
+
+    def toggle_theme(self) -> None:
+        """顶栏 🌙 的槽：点一下切到下一档主题。"""
+        self.apply_theme(theme.next_theme(theme.CURRENT))
 
     # ---- background ------------------------------------------------------
 
@@ -1053,13 +1339,13 @@ class MiniWindow(QWidget):
         m = RESIZE_MARGIN + FRAME
         edges = 0
         if pos.x() <= m:
-            edges |= int(Qt.LeftEdge)
+            edges |= EDGE_LEFT
         elif pos.x() >= w - m:
-            edges |= int(Qt.RightEdge)
+            edges |= EDGE_RIGHT
         if pos.y() <= m:
-            edges |= int(Qt.TopEdge)
+            edges |= EDGE_TOP
         elif pos.y() >= h - m:
-            edges |= int(Qt.BottomEdge)
+            edges |= EDGE_BOTTOM
         return edges
 
     def begin_drag(self, event) -> bool:
@@ -1179,26 +1465,26 @@ class MiniWindow(QWidget):
         right, bottom = start.x() + start.width(), start.y() + start.height()
         min_w = max(0, int(self.minimumWidth()))
         min_h = max(0, int(self.minimumHeight()))
-        if edges & int(Qt.LeftEdge):
+        if edges & EDGE_LEFT:
             # Right edge fixed: the left edge follows the pointer, but cannot cross
             # right-min_w (which is exactly the minimum-width floor).
             left = min(start.x() + dx, right - min_w)
-        elif edges & int(Qt.RightEdge):
+        elif edges & EDGE_RIGHT:
             # Left edge fixed; the right edge follows the pointer.
             right = max(right + dx, left + min_w)
-        if edges & int(Qt.TopEdge):
+        if edges & EDGE_TOP:
             top = min(start.y() + dy, bottom - min_h)
-        elif edges & int(Qt.BottomEdge):
+        elif edges & EDGE_BOTTOM:
             bottom = max(bottom + dy, top + min_h)
         return QRect(left, top, right - left, bottom - top)
 
     @staticmethod
     def _cursor_for_edges(edges: int):
         """The resize cursor for an edges bitmask, or None for the interior."""
-        left = bool(edges & int(Qt.LeftEdge))
-        right = bool(edges & int(Qt.RightEdge))
-        top = bool(edges & int(Qt.TopEdge))
-        bottom = bool(edges & int(Qt.BottomEdge))
+        left = bool(edges & EDGE_LEFT)
+        right = bool(edges & EDGE_RIGHT)
+        top = bool(edges & EDGE_TOP)
+        bottom = bool(edges & EDGE_BOTTOM)
         if (left and top) or (right and bottom):
             return Qt.SizeFDiagCursor
         if (right and top) or (left and bottom):
@@ -1431,6 +1717,9 @@ class MiniWindow(QWidget):
             on_content=self.preview_content_alpha,
             # 复选框一动就把 👁 的按下状态跟过去（只动按钮外观，设置仍然等"确定"才写）。
             on_leave_hide=self._sync_leave_hide_button,
+            # 下拉里选主题：立刻生效（和顶栏 🌙 同一条通道），但**不落盘**——落盘仍然
+            # 等"确定"。取消时下面的 else 分支会把主题回滚。
+            on_theme=self._preview_theme,
         )
         if self.settings.hide_from_taskbar:
             # A dialog parented to a Qt.Tool window still gets its own taskbar button on
@@ -1438,11 +1727,17 @@ class MiniWindow(QWidget):
             # Setting the flag here is safe: the dialog has no HWND worth preserving yet.
             dialog.setWindowFlag(Qt.Tool, True)
         self._dialog_open = True
+        self._settings_dialog = dialog
+        # 对话框打开前的主题。下拉里的主题是**实时预览**（不落盘），所以取消时必须
+        # 从"打开前"这个值切回去，而不是从 self.settings.theme 读——那个字段在预览
+        # 期间已经被写成预览值了（见 _preview_theme）。
+        self._theme_before_dialog = theme.CURRENT
         self.refresh_opacity()
         try:
             accepted = exec_dialog(dialog)
         finally:
             self._dialog_open = False
+            self._settings_dialog = None
         if accepted:
             self.settings = dialog.apply_to(self.settings)
             self.settings.save(self._settings_path)
@@ -1458,8 +1753,18 @@ class MiniWindow(QWidget):
             self.apply_content_alpha(self.settings)
             # 👁 的按下状态同理：取消后必须回到磁盘上的 mouse_leave_hide。
             self._sync_leave_hide_button()
+            # 主题同理：预览期间界面已经切过去了，取消要原样切回来（不落盘）。
+            self.apply_theme(self._theme_before_dialog, persist=False)
         dialog.deleteLater()
         self.refresh_opacity()
+
+    def _preview_theme(self, name: str) -> None:
+        """设置页下拉的实时预览：立即切换外观，但**不**写盘。
+
+        和 🌙 按钮共用 `apply_theme()`，所以两条入口的副作用完全一致（顶栏、底栏、
+        正文选中色、目录高亮条都跟着走）。
+        """
+        self.apply_theme(name, persist=False)
 
     def _preview_settings(self, preview: Settings) -> None:
         """Live preview while the dialog is open. Nothing is written to disk."""
@@ -1474,6 +1779,12 @@ class MiniWindow(QWidget):
 
     def apply_preferences(self) -> None:
         """Push the current settings into the live window. Safe to call any time."""
+        # 主题排在模式切换之前：它只改样式表与自绘颜色，不重建原生窗口，所以放在最前
+        # 面不会和下面的 _sync_translucent_mode 抢窗口。设置对话框按下"确定"时，主题
+        # 预览值就是这里的落盘值，这一步把活动调色板与 settings.theme 对齐（两者通常
+        # 已经相等，相等时 apply_theme 是幂等的）。
+        if theme.CURRENT != self.settings.theme:
+            self.apply_theme(self.settings.theme, persist=False)
         # 模式切换要重建原生窗口，放最前面：后面的 opacity/background 才会作用在正确
         # 的窗口上。
         self._sync_translucent_mode()
@@ -1482,11 +1793,49 @@ class MiniWindow(QWidget):
         self.apply_content_alpha()
         self.reader.apply_style(self.settings)
         self.apply_autoscroll_settings()
+        self.apply_comic_settings()
         self.apply_disguise()
         self.sync_tray()
         self.reload_hotkeys()
         self._sync_leave_hide_button()
         self.refresh_opacity()
+
+    def apply_comic_settings(self) -> None:
+        """Push the comic-side settings into the comic reader.
+
+        Separate from `apply_preferences()` so it can also run at construction,
+        before a book exists. `comic_default_mode` and `comic_default_zoom` are
+        applied to the reader's *state* rather than remembered as defaults to
+        apply on open: the reader is a long-lived widget and its state is what
+        the title-bar buttons read, so the setting and the button stay in step
+        either way.
+
+        Modes this build cannot render yet are skipped rather than pushed — see
+        the comment on `mode` below.
+        """
+        settings = self.settings
+        self._comic_reader.set_cache_mb(_as_int(settings.comic_cache_mb, DEFAULT_CACHE_MB))
+        self._comic_reader.set_preload(_as_int(settings.comic_preload, PRELOAD_RADIUS))
+        self._comic_reader.set_zoom(getattr(settings, "comic_default_zoom", "width"))
+        # Mode C's own settings. Pushed here so the mode button and the settings
+        # dialog describe the same state, whichever the user changed last.
+        self._comic_reader.set_binding(getattr(settings, "comic_binding", "rtl"))
+        self._comic_reader.set_gutter(_as_int(getattr(settings, "comic_gutter", 0), 0))
+        self._comic_reader.set_cover_alone(bool(getattr(settings, "comic_cover_alone", True)))
+        # Only push a mode this build can actually render. `set_mode()` answers an
+        # unimplemented mode by emitting a "coming in stage N" notice and keeping the
+        # old one — correct when the user clicks the button, but wrong at startup:
+        # a saved `comic_default_mode="spread"` would pop that notice on every launch,
+        # for a setting the user set long ago and cannot act on yet. Leaving the mode
+        # alone lets it arrive silently when stage 5 implements it.
+        #
+        # `set_mode()` also refuses `spread` on a portrait window (the reader decides,
+        # so every caller gets the same answer), which is exactly the behaviour wanted
+        # here: a saved preference does not fight the window's shape.
+        mode = getattr(settings, "comic_default_mode", "single")
+        if mode in self._comic_reader.IMPLEMENTED_MODES:
+            self._comic_reader.set_mode(mode)
+        self._sync_comic_buttons()
 
     def sync_tray(self) -> None:
         """Create or destroy the tray icon so the setting takes effect without a restart.
@@ -1556,37 +1905,195 @@ class MiniWindow(QWidget):
 
     def open_dialog(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
-            self, "打开 TXT", os.path.expanduser("~"), "文本文件 (*.txt);;所有文件 (*.*)"
+            self, "打开文件", os.path.expanduser("~"), dialog_filters()
         )
         if path:
             self.load_path(path)
 
-    def load_path(self, path: str, *, chapter: int | None = None, offset: int | None = None) -> bool:
-        """Open a TXT file, resuming where this book was last left off.
+    def load_path(
+        self,
+        path: str,
+        *,
+        chapter: int | None = None,
+        offset: int | None = None,
+        pdf_kind: str | None = None,
+    ) -> bool:
+        """Open any supported file, resuming where this book was last left off.
 
         The resume lookup lives here rather than at the call sites so that every way of
         opening a book - the file dialog, drag-and-drop, the command line, the
         remembered last book - behaves the same. Passing an explicit chapter or offset
         overrides it.
+
+        A dual-identity file whose content cannot be classified asks once, here, so
+        that every entry point gets the same question and none of them can open such a
+        book silently as the wrong thing.
+
+        `pdf_kind` is a caller-supplied answer that skips both the measurement and the
+        question - it is how the reader menu's 「按文本打开」/「按漫画打开」 take effect.
         """
+        # `answer` is the user's choice for this file. It is written down only after
+        # the book is actually in hand - see the comment at the write site.
+        answer = pdf_kind if pdf_kind in (PDF_TEXT, PDF_COMIC) else None
+        is_pdf = _ext_of(str(path)) in DUAL_IDENTITY_EXTS
+        if answer is not None and is_pdf:
+            # The user just picked a reader. No need to measure, and nothing to ask:
+            # they have already answered.
+            prefer: str | None = answer
+        else:
+            # An opinion about a non-PDF is not an opinion - do not store one.
+            answer = None
+            prefer = self._pdf_preference(path)
+            if prefer is None and is_pdf:
+                # Nobody has an opinion yet: measure, and ask if the measurement is
+                # inconclusive. `pdf_choice()` is the only call that reports ambiguity.
+                try:
+                    choice = pdf_choice(path)
+                except BookError as exc:
+                    self.set_warning(f"打不开：{exc}")
+                    return False
+                except Exception as exc:  # noqa: BLE001 - a bad file must not kill the window
+                    self.set_warning(f"打不开：{type(exc).__name__}: {exc}")
+                    return False
+                if choice.needs_ask:
+                    answer = self._ask_pdf_kind(path)
+                    # A dismissed dialog means "no opinion": text is what the file
+                    # would have opened as anyway, and nothing is written down.
+                    prefer = answer if answer is not None else PDF_TEXT
+                else:
+                    # Hand the measurement back to `open_book()` so it does not have to
+                    # measure the same document a second time.
+                    prefer = choice.kind
         try:
-            book = Book.from_path(path)
+            book = open_book(path, pdf_kind=prefer)
         except BookError as exc:
             self.set_warning(f"打不开：{exc}")
             return False
         except Exception as exc:  # noqa: BLE001 - a bad file must not kill the window
             self.set_warning(f"打不开：{type(exc).__name__}: {exc}")
             return False
+        if answer is not None:
+            # Written only now, with the book in hand. Recording the answer before
+            # the open would poison the file when the chosen reader cannot open it:
+            # no book on screen means no reader menu, so there would be no way left
+            # to change the answer back.
+            self._remember_pdf_kind(book.id, answer)
         if chapter is None and offset is None:
             saved = self.progress.get(book.id)
-            if saved.chapter or saved.offset:
+            if book.kind == KIND_COMIC:
+                # 漫画记的是页码（旧文件里没有这个键，取默认 0）。像素偏移对漫画没有
+                # 意义，所以不看它——否则一本旧书残留的 offset 会让刚打开的漫画
+                # 被当成"已读到某处"。
+                if saved.page:
+                    chapter = saved.page
+            elif saved.chapter or saved.offset:
                 chapter, offset = saved.chapter, saved.offset
         self.set_book(book, chapter=chapter, offset=offset)
         return True
 
-    def set_book(self, book: Book, *, chapter: int | None = None, offset: int | None = None) -> None:
+    def _pdf_preference(self, path) -> str | None:
+        """Which reader a PDF should open in, or None to let the file decide.
+
+        Three answers, in priority order:
+
+        1. What this book was opened as last time. A per-book answer is the whole
+           point - the user corrected one file, not all PDFs.
+        2. `pdf_default_kind` from the settings, when it is not "auto".
+        3. None, meaning `pdfdoc.classify()` measures the document.
+
+        Reading the progress store here is safe: `open_book()` needs the answer
+        before it can build a book, and the store is already loaded.
+        """
+        if _ext_of(str(path)) not in DUAL_IDENTITY_EXTS:
+            return None
+        remembered = self.progress.get(book_id(path)).pdf_kind
+        if remembered in (PDF_TEXT, PDF_COMIC):
+            return remembered
+        chosen = self.settings.pdf_default_kind
+        return chosen if chosen in (PDF_TEXT, PDF_COMIC) else None
+
+    def remember_pdf_kind(self, kind: str) -> None:
+        """Store the user's "read this PDF as ..." choice for this book only.
+
+        Called from the reader menu. The choice takes effect immediately, so the
+        document is reopened - which for a PDF is cheap (opening the document is
+        half a millisecond; nothing is parsed until a page is asked for).
+
+        The reopen goes through `load_path(pdf_kind=...)` rather than writing the
+        answer here first. That ordering is the whole point: a scanned PDF has no
+        extractable text, so "open it as text" cannot succeed, and an answer written
+        before the attempt would be left on disk pointing at a reader that fails.
+        The next launch would then have no book on screen - and since the reader
+        menu's PDF items are only reachable while a PDF is open, there would be no
+        way left to undo the choice. `load_path()` writes only after the book is in
+        hand, so a failed override changes nothing.
+        """
+        if self.book is None or _ext_of(self.book.path) not in DUAL_IDENTITY_EXTS:
+            return
+        if kind not in (PDF_TEXT, PDF_COMIC):
+            return
+        if self.progress.get(self.book.id).pdf_kind == kind:
+            return
+        path = self.book.path
+        if not self.load_path(path, pdf_kind=kind):
+            # The chosen reader could not open this file. Nothing was written, so
+            # the reader on screen is still the one that works - say so, because
+            # `load_path()`'s warning alone reads like the file itself is broken.
+            self.set_warning(
+                "这个 PDF 按文本打开取不到文字，已保持原来的打开方式"
+                if kind == PDF_TEXT
+                else "这个 PDF 按漫画打开失败，已保持原来的打开方式"
+            )
+            return
+        self.set_warning("已按文本打开，下次仍这样打开" if kind == PDF_TEXT else "已按漫画打开，下次仍这样打开")
+
+    def _ask_pdf_kind(self, path) -> str | None:
+        """Ask once which reader an unclassifiable PDF should use.
+
+        Called only when `pdfdoc.classify()` said `needs_ask` - nobody has a
+        remembered answer, the settings say "auto", and measuring the document
+        found neither enough text nor enough picture to decide.
+
+        Returns the chosen kind, or None when the user dismissed the dialog -
+        and the caller then opens the file as text, which is what it would have
+        opened as without the question. A dismissed dialog must never be worse
+        than no dialog.
+
+        This deliberately does **not** write the answer down. Remembering is the
+        caller's job, done only after the book actually opens: a PDF with no
+        extractable text fails to open as text, and if the choice had already
+        been stored, that file would be stuck failing forever - there is no book
+        on screen, so there is no right-click menu to correct it with.
+        """
+        title = os.path.splitext(os.path.basename(str(path)))[0] or str(path)
+        dialog = PdfKindDialog(title, parent=self)
+        if self.settings.hide_from_taskbar:
+            # Same reason as the settings dialog: a dialog parented to a Qt.Tool
+            # window gets its own taskbar button on Windows, which would defeat
+            # 隐藏任务栏 for as long as it is open.
+            dialog.setWindowFlag(Qt.Tool, True)
+        was_open = self._dialog_open
+        self._dialog_open = True
+        try:
+            accepted = exec_dialog(dialog)
+        finally:
+            self._dialog_open = was_open
+        choice = dialog.choice() if accepted else None
+        return choice if choice in (PDF_TEXT, PDF_COMIC) else None
+
+    def _remember_pdf_kind(self, book_id_value: str, kind: str) -> None:
+        """Store one book's answer for the next open of that same file."""
+        record = self.progress.get(book_id_value)
+        record.pdf_kind = kind
+        self.progress.put(book_id_value, record)
+        self.progress.save()
+
+    def set_book(self, book, *, chapter: int | None = None, offset: int | None = None) -> None:
         self.book = book
         self.chapter_index = book.clamp(chapter if chapter is not None else 0)
+        # 先选 Reader 再显示：漫画要读的是页码而不是像素偏移，两件事必须发生在
+        # show_chapter() 之前，否则第一帧会用错的控件渲染错的坐标。
+        self._select_reader(book.kind)
         self.show_chapter(offset=offset or 0)
         self.title_label.setText(book.title)
         self.title_label.setToolTip(f"{book.title}\n{book.describe()}")
@@ -1596,6 +2103,136 @@ class MiniWindow(QWidget):
         self.persist_progress()
         # 换书就要换目录和书签：面板可能正开着，而它上面还挂着上一本书的章节。
         self._refresh_toc()
+
+    def _select_reader(self, kind: str) -> None:
+        """把当前 Reader 切到 `kind` 对应的那个，并重新绑定依赖它的部件。
+
+        `self.reader` 始终指向"当前生效的 Reader"，属性名和语义都没变——窗口里
+        25 处调用点和十几条既有测试都按这个名字取正文控件。
+
+        停掉旧 Reader 是有意义的：漫画页缓存在内存里按 MB 计（默认 256 MB），
+        切去读小说时那些页不该继续占着。
+        """
+        index = 0 if kind != KIND_COMIC else 1
+        if self._reader_stack.currentIndex() != index:
+            self.reader.stop()
+            self._reader_stack.setCurrentIndex(index)
+        self.reader = self._reader_stack.widget(index)
+        # 自动滚动器只认构造时注入的那根滚动条，换 Reader 不会让它改换目标。从"开着
+        # 自动滚动的小说"切到漫画时必须显式停掉：否则它会继续在隐藏的正文上滚到底，
+        # 然后 `_on_autoscroll_end` 把漫画一页页翻下去——用户什么都没按，页码自己在走。
+        if self.reader.scrollbar() is None:
+            self.autoscroller.stop()
+            self._sync_autoscroll_button()
+        self._rebind_reader_views()
+
+    def _rebind_reader_views(self) -> None:
+        """把"跟着当前 Reader 走"的部件重新挂到新的那个上面。
+
+        两件事：
+
+        1. **事件过滤器**。它同时负责"鼠标停在正文上时暂停自动滚动"和 4px 边缘缩放
+           热区，不装的话漫画模式下边缘拖拽会静默失效。漫画换模式会换 `viewport()`
+           返回的控件，所以这里先把旧的摘掉再装新的——同一个窗口只该有一处安装点。
+
+        2. **自动滚动器换目标**。`AutoScroller` 构造时就吃死了注入的那根滚动条，
+           而窗口启动时注入的是**文字正文**的条。模式 A 的漫画 `scrollbar()` 返回
+           None，于是停掉（否则它会继续在隐藏的正文上滚到底，再经
+           `_on_autoscroll_end` 把漫画一页页翻下去——用户什么都没按，页码自己在走）。
+           模式 B 返回的是一条真滚动条，此时必须换过去：不换的话按钮亮成"暂停"、
+           屏幕上什么都不动，而且滚的是看不见的正文。
+        """
+        viewport = self.reader.viewport()
+        self._install_view_filter(viewport)
+        self._bind_autoscroller(self.reader.scrollbar())
+        self._sync_comic_buttons()
+
+    def _install_view_filter(self, viewport) -> None:
+        """把边缘缩放/悬停暂停的过滤器装到 `viewport` 上，旧的摘掉。"""
+        if viewport is self._filtered_viewport:
+            return
+        if self._filtered_viewport is not None:
+            self._filtered_viewport.removeEventFilter(self)
+        self._filtered_viewport = viewport
+        if viewport is not None:
+            viewport.installEventFilter(self)
+            # 正文左/右缘 8px 被 viewport 盖着；开追踪后 eventFilter 才能在不按键
+            # 悬停时把那一条上的光标换成左右缩放形状（见 _route_edge_event）。
+            viewport.setMouseTracking(True)
+
+    def _bind_autoscroller(self, bar) -> None:
+        """让自动滚动去滚 `bar`；`bar` 为 None 时改滚一根"停着的"空条。
+
+        **为什么不是直接传 None。** `AutoScroller` 的契约是"构造时注入哪根条就滚
+        哪根"，它 `start()` 的第一件事就是读 `bar.value()`。传 None 能构造成功，但
+        任何一条走到 `start()` 的路径都会 `AttributeError: 'NoneType' object has no
+        attribute 'value'`——那是个只在特定顺序下才炸的雷。给它一根范围是 (0,0) 的
+        真条，`start()` 会立刻判定"到底了"并安全收摊（见 `AutoScroller.start()`），
+        而且 `autoscroll.py` 一个字节都不用改。
+
+        **为什么新建实例而不是给现有实例换目标。** 同上：它吃死注入的那根条正是它
+        和滚轮缓动解耦的设计（`autoscroll.py` 的模块 docstring），加 setter 等于打开
+        "运行中换目标"这个口子。代价是这里必须重接信号、重推设置——新实例不继承
+        旧实例的状态。
+
+        `self.autoscroller` 始终指向"当前生效的那个"，窗口里所有调用点和测试都按
+        这个名字取，语义和 `self.reader` 一样。`self._autoscroll_bar` 记的是当前
+        真正绑上去的那根（可能是那根停着的空条），用来判断"要不要重新绑"。
+        """
+        target = bar if bar is not None else self._parked_bar
+        if target is self._autoscroll_bar:
+            return
+        if self.autoscroller is not None:
+            self.autoscroller.stop()
+            self.autoscroller.deleteLater()
+        self._autoscroll_bar = target
+        self.autoscroller = AutoScroller(target, parent=self)
+        self.autoscroller.reachedEnd.connect(self._on_autoscroll_end)
+        self.autoscroller.stopped.connect(self._sync_autoscroll_button)
+        self.apply_autoscroll_settings()
+        self._sync_autoscroll_button()
+
+    def _sync_comic_buttons(self) -> None:
+        """漫画专属控件的可见性与文案。文本模式下它们不参与布局。"""
+        comic = self.book is not None and self.book.kind == KIND_COMIC
+        for button in (self.comic_mode_button, self.comic_zoom_button):
+            button.setVisible(comic)
+        reader = self._comic_reader
+        # The binding button only makes a visible difference in two-page mode, so
+        # it appears with it. A button that changes nothing is worse than no
+        # button: the user clicks it, sees nothing move, and stops trusting the
+        # other two.
+        self.comic_binding_button.setVisible(comic and reader.mode == "spread")
+        if not comic:
+            return
+        self.comic_mode_button.setText(reader.mode_label())
+        self.comic_mode_button.setToolTip(reader.mode_tip())
+        self.comic_zoom_button.setText(reader.zoom_label())
+        self.comic_zoom_button.setToolTip(reader.zoom_tip())
+        self.comic_binding_button.setText(reader.binding_label())
+        self.comic_binding_button.setToolTip(reader.binding_tip())
+
+    def cycle_comic_mode(self) -> None:
+        self._comic_reader.cycle_mode()
+        self._sync_comic_buttons()
+        self._update_status()
+
+    def cycle_comic_binding(self) -> None:
+        """翻一下装订方向。`cycle_binding()` 记的是"本书覆盖"，不是改设置。
+
+        提示由 `ComicReader` 自己发（它才知道方向是从哪一级来的），窗口只负责
+        刷新按钮和底栏。
+        """
+        self._comic_reader.cycle_binding()
+        self._sync_comic_buttons()
+        self._update_status()
+
+    def cycle_comic_zoom(self) -> None:
+        self._comic_reader.cycle_zoom()
+        self._sync_comic_buttons()
+        # 底栏次要信息里带着 `zoom_tip()`（"缩放：高度适应"），换档后不刷新就会一直
+        # 显示上一档，直到用户翻页才追上——按钮变了而底栏没变，看起来像没生效。
+        self._update_status()
 
     def show_chapter(
         self,
@@ -1608,8 +2245,12 @@ class MiniWindow(QWidget):
             self._show_placeholder()
             return
         self.chapter_index = self.book.clamp(self.chapter_index)
-        self.reader.set_chapter(
-            self.book.chapter_body(self.chapter_index),
+        # 一律走 Reader 接口的 show_book()：文本 Reader 用 offset/char_offset 还原像素
+        # 位置，漫画 Reader 只看 index。窗口不再自己调 set_chapter()，也不再自己取
+        # chapter_body()——"怎么把一本书显示在某个位置"是 Reader 的事。
+        self.reader.show_book(
+            self.book,
+            index=self.chapter_index,
             offset=offset,
             at_end=at_end,
             char_offset=char_offset,
@@ -1617,14 +2258,50 @@ class MiniWindow(QWidget):
         self._update_status()
 
     def step_chapter(self, delta: int) -> None:
+        """Move one position: a chapter for text, a page for modes A/B, a spread for C.
+
+        Mode C delegates the step to the reader rather than doing the arithmetic
+        here. A spread is two pages wide, so `chapter_index + delta` would move by
+        one *page* - and the reader would then collapse that page back into the
+        spread it already belongs to, so two presses would show the same spread
+        (measured: pressing "下一页" four times from the cover reached only the
+        third spread). `ComicReader.next_page()`/`prev_page()` know the spread
+        arithmetic; this only has to adopt the page they landed on.
+        """
         if self.book is None:
+            return
+        if self.book.kind == KIND_COMIC and self._comic_reader.mode == "spread":
+            if delta > 0:
+                self._comic_reader.next_page()
+            elif delta < 0:
+                self._comic_reader.prev_page()
+            else:
+                return
+            # The reader owns the position; the window follows. `_on_scrolled`
+            # normally syncs this, but a direct `next_page()` (hotkey or test)
+            # bypasses the reader's `scrolled` signal, so copy it across here too
+            # rather than relying on exactly one path.
+            self.chapter_index = self.book.clamp(self._comic_reader.index)
+            self._update_status()
+            self.persist_progress()
             return
         target = self.book.clamp(self.chapter_index + delta)
         if target == self.chapter_index:
+            # 已经在首/末页，这一步没动。连续滚动模式下要说出来：右键菜单的
+            # 「上一页/下一页」和底栏那两个胶囊钮都走这里，而模式 B 的页码是
+            # 滚出来的，用户点一下没反应会以为菜单坏了。单页模式保持沉默——
+            # 那里的按钮本身就是灰的，已经说清楚了。
+            #
+            # 方向取反：`delta` 是"往书的哪个方向走"（+1 是下一页），而
+            # `say_boundary` 收的是"卡在哪一端"（+1 是顶端），两者相反。
+            # 传错的话"末页点下一页"会说成"已经是第一页了"——实测就是这么错的。
+            if self.book.kind == KIND_COMIC:
+                self._comic_reader.say_boundary(-delta)
             return
         self.chapter_index = target
         # Going back lands at the END of the previous chapter: the reader was moving
-        # forward, so the far edge is the interesting one.
+        # forward, so the far edge is the interesting one. A comic page has no "end",
+        # and ComicReader ignores at_end, so the same call serves both.
         self.show_chapter(at_end=delta < 0)
         self.persist_progress()
 
@@ -1646,7 +2323,7 @@ class MiniWindow(QWidget):
         menu = QMenu(self)
         menu.setObjectName("ReaderContextMenu")
         menu.setMinimumWidth(READER_MENU_MIN_W)
-        menu.setStyleSheet(READER_MENU_QSS)
+        menu.setStyleSheet(reader_menu_qss())
 
         self.prev_page_action = QAction("上一页", menu)
         self.prev_page_action.triggered.connect(lambda: self.step_chapter(-1))
@@ -1662,6 +2339,24 @@ class MiniWindow(QWidget):
         self.reload_page_action.triggered.connect(self.reload_current_chapter)
         menu.addAction(self.reload_page_action)
 
+        # PDF 的两项只在 PDF 上出现：别的格式的 kind 是确定的，给它们一个
+        # "按漫画打开" 只会让用户以为按了会有什么变化。菜单项自身 setVisible(False)
+        # 而不是菜单重建，理由同上——动作只建一次。
+        menu.addSeparator()
+        self.pdf_text_action = QAction("按文本打开", menu)
+        self.pdf_text_action.triggered.connect(lambda: self.remember_pdf_kind(PDF_TEXT))
+        menu.addAction(self.pdf_text_action)
+
+        self.pdf_comic_action = QAction("按漫画打开", menu)
+        self.pdf_comic_action.triggered.connect(lambda: self.remember_pdf_kind(PDF_COMIC))
+        menu.addAction(self.pdf_comic_action)
+        self.pdf_separator = menu.actions()[-3]
+        # Hidden until a PDF is open. Done here as well as in `_sync_pdf_actions`
+        # because a hidden action still contributes to `sizeHint()`, and the menu
+        # is measured (and shown) before any `aboutToShow` fires.
+        for widget in (self.pdf_text_action, self.pdf_comic_action, self.pdf_separator):
+            widget.setVisible(False)
+
         # aboutToShow：刷新边界启用态（第一章不能再往前），同时暂停移出隐身。
         # aboutToHide：恢复——指针若还在窗外，重新开始 100ms 防抖。
         menu.aboutToShow.connect(self._on_reader_menu_about_to_show)
@@ -1676,6 +2371,7 @@ class MiniWindow(QWidget):
         # 菜单打开期间移出隐身一律让位（定时中也立刻撤掉）。
         self._context_menu_open = True
         self._cancel_leave_hide()
+        self._sync_pdf_actions()
         book = self.book
         if book is None:
             self.prev_page_action.setEnabled(False)
@@ -1686,6 +2382,27 @@ class MiniWindow(QWidget):
         # 与底栏胶囊钮同一条边界规则（见 _update_status），避免点了没反应。
         self.prev_page_action.setEnabled(self.chapter_index > 0)
         self.next_page_action.setEnabled(self.chapter_index < book.chapter_count - 1)
+
+    def _sync_pdf_actions(self) -> None:
+        """Show the two PDF entries only for a PDF, and tick the current choice.
+
+        Checkable actions rather than a radio group: the menu is a one-shot popup
+        and never has to hold a consistent selection, so the extra state a
+        QActionGroup would track has nowhere to go.
+        """
+        is_pdf = self.book is not None and _ext_of(self.book.path) in DUAL_IDENTITY_EXTS
+        for widget in (self.pdf_text_action, self.pdf_comic_action, self.pdf_separator):
+            widget.setVisible(is_pdf)
+        if not is_pdf:
+            return
+        # The tick reflects what this document is *currently* open as, not what is
+        # remembered - the two differ right after a settings change, and the menu
+        # should describe the screen.
+        opened_as_text = self.book.kind != KIND_COMIC
+        self.pdf_text_action.setCheckable(True)
+        self.pdf_comic_action.setCheckable(True)
+        self.pdf_text_action.setChecked(opened_as_text)
+        self.pdf_comic_action.setChecked(not opened_as_text)
 
     def _on_reader_menu_about_to_hide(self) -> None:
         self._context_menu_open = False
@@ -1701,19 +2418,29 @@ class MiniWindow(QWidget):
         重读而不是 set_chapter 重放旧文本：这个入口的意义就是文件在外部被改动
         （换了编码、补了内容）后能看到新版本。锚点取视口顶端的字符位置而不是像素，
         新版文本若变长/变短，读者仍停在同一句话附近。
+
+        走 `open_book()` 而不是 `Book.from_path()`：后者只认文字书，对漫画会返回一个
+        Book 去喂给 ComicReader，在那里 `book.pages` 上抛 AttributeError（实测崩在
+        comic_reader.py 的 `_render()`）。重开一次同一个文件必须还是同一类书。
         """
         book = self.book
         if book is None:
             return
         try:
-            reloaded = Book.from_path(book.path)
+            reloaded = open_book(book.path)
         except BookError as exc:
             self.set_warning(f"重新加载失败：{exc}")
             return
         anchor = self.reader.first_visible_char() if self.reader.char_count() else None
         self.book = reloaded
-        self.chapter_index = reloaded.clamp(self.chapter_index)
-        self.show_chapter(char_offset=anchor)
+        # 漫画没有「编码可能不准」这回事，而且它的位置是页码不是字符偏移。
+        if reloaded.kind == KIND_COMIC:
+            self._select_reader(reloaded.kind)
+            self.chapter_index = reloaded.clamp(self.chapter_index)
+            self.show_chapter()
+        else:
+            self.chapter_index = reloaded.clamp(self.chapter_index)
+            self.show_chapter(char_offset=anchor)
         self.title_label.setText(reloaded.title)
         self.title_label.setToolTip(f"{reloaded.title}\n{reloaded.describe()}")
         self.set_warning("编码可能不准，可在设置里手动指定" if not reloaded.confident else "")
@@ -1769,26 +2496,35 @@ class MiniWindow(QWidget):
 
         存的是**章内字符位置**而不是滚动条像素：读者换个字号或拉一下窗口，像素偏移
         指向的就是别处的文字了，那种书签跳过去只会让人以为是 bug。
+
+        漫画没有字符，所以存的是页码，`offset` 恒为 0——书签表按 book.id 索引，两种书
+        共用一张表不会串味。
         """
         book = self.book
         if book is None:
             self.set_warning("先打开一本书再加书签")
             return
-        chapter = book.clamp(self.chapter_index)
-        offset = self.reader.first_visible_char()
-        body = book.chapter_body(chapter)
-        excerpt = _excerpt(body, offset)
-        ch = book.chapter(chapter)
-        label = (ch.title if ch else "") or f"章节 {chapter + 1}"
+        index = book.clamp(self.chapter_index)
+        if book.kind == KIND_COMIC:
+            # 漫画：一页就是一个书签，没有"页内位置"这回事。
+            offset = 0
+            excerpt = ""
+            label = f"第 {index + 1} 页"
+        else:
+            offset = self.reader.first_visible_char()
+            body = book.chapter_body(index)
+            excerpt = _excerpt(body, offset)
+            ch = book.chapter(index)
+            label = (ch.title if ch else "") or f"章节 {index + 1}"
         try:
-            self.store.add(book.id, chapter, offset, label=label, excerpt=excerpt)
+            self.store.add(book.id, index, offset, label=label, excerpt=excerpt)
         except Exception as exc:  # noqa: BLE001 - 存书签失败不该打断阅读
             self.set_warning(f"书签没存上：{exc}")
             return
         self.reload_bookmarks()
         self.set_warning("已加书签")
         if self.toc_panel.isVisible():
-            self.toc_panel.set_current(chapter)
+            self.toc_panel.set_current(index)
 
     def _on_bookmark_chosen(self, bookmark_id: int) -> None:
         item = self._find_bookmark(bookmark_id)
@@ -1892,6 +2628,20 @@ class MiniWindow(QWidget):
         return False
 
     def toggle_autoscroll(self) -> None:
+        # 自动滚动器构造时就吃死了注入的那根条（见 `_rebind_reader_views`）。没有条
+        # 的时候不拦住的话：按钮亮成"暂停"、屏幕上什么都不动，等它悄悄滚到隐藏正文
+        # 的底部，`_on_autoscroll_end` 会把漫画翻到下一页——用户没碰键盘，页码自己变了。
+        # 热键也走这里，所以闸门设在这一层而不是按钮的可见性上。
+        #
+        # 用 `scrollbar()`（Reader 接口）判断而不是 `verticalScrollBar()`：前者才是
+        # "这个 Reader 有没有可滚动的条"的答案——单页漫画返回 None，而阶段 4 的连续
+        # 滚动模式返回一条真条，于是这里不用改就自动放行。
+        if self.reader.scrollbar() is None:
+            self.autoscroller.stop()
+            self._sync_autoscroll_button()
+            if self.book is not None and self.book.kind == KIND_COMIC:
+                self.set_warning("漫画是整页显示的，用不着自动滚动")
+            return
         self.autoscroller.toggle()
         self._sync_autoscroll_button()
 
@@ -1910,6 +2660,15 @@ class MiniWindow(QWidget):
     def _on_autoscroll_end(self) -> None:
         """滚到章末了：接下一章继续，读完了就停下并说出来。"""
         book = self.book
+        # 漫画连续滚动模式下"整本 = 一话"，没有下一话可接。自动滚到底就是读完了，
+        # 和用户自己滚到底说同一句话（走 `say_boundary`，文案只有一处实现）。
+        # 不拦的话 `step_chapter(1)` 会在末页上原地打转，而 `_resume_autoscroll`
+        # 又会把滚动器重新启动到已经到底的条上——按钮亮着、屏幕不动。
+        if book is not None and book.kind == KIND_COMIC:
+            self.autoscroller.stop()
+            self._sync_autoscroll_button()
+            self._comic_reader.say_boundary(-1)
+            return
         if book is None or self.chapter_index >= book.chapter_count - 1:
             self.autoscroller.stop()
             self._sync_autoscroll_button()
@@ -1924,28 +2683,45 @@ class MiniWindow(QWidget):
         # 新章节如果整章装得下一屏（maximum == 0，比如很短的一章或是空章），再调
         # start() 会立刻又判定"到底了"，于是又跳下一章——连着一串短章节就会变成几百次
         # 事件循环的空转。这里停下来直说，比一章一章地闪过去有用。
-        if self.reader.verticalScrollBar().maximum() <= 0:
+        #
+        # 走 `scrollbar()`（Reader 接口）而不是 `verticalScrollBar()`（Qt 的）：
+        # 后者在漫画上被有意保留给 Qt 自己，前者才是"这个 Reader 有没有可滚动的条"
+        # 的答案——单页漫画返回 None，于是自动滚动在漫画上自然停下。
+        bar = self.reader.scrollbar()
+        if bar is None or bar.maximum() <= 0:
             self.autoscroller.stop()
             self._sync_autoscroll_button()
-            self.set_warning("这一章不用滚动就到头了")
+            # 漫画整页显示，压根没有可滚动的高度——说"这一章"就露馅了（漫画没有章，
+            # 只有页）。两种书的说法分开，用户才知道自己按的那个键为什么不生效。
+            if self.book is not None and self.book.kind == KIND_COMIC:
+                self.set_warning("漫画是整页显示的，用不着自动滚动")
+            else:
+                self.set_warning("这一章不用滚动就到头了")
             return
         self.autoscroller.reset_end_latch()
         self.autoscroller.start()
         self._sync_autoscroll_button()
 
     def _show_placeholder(self) -> None:
-        self.reader.set_chapter(
-            "把 TXT 文件拖到窗口里，或者点左下角「打开」。\n\n"
-            "· 滚轮上下滚动，滚到章末再滚一下就是下一章\n"
-            "· 老板键把窗口整个藏起来，再按一次回来\n"
-            "· 托盘图标右键可以调不透明度、打开设置、退出\n"
-            "· 窗口位置和阅读进度会自动记住",
-            offset=0,
-        )
+        # 占位文案走当前 Reader 的接口。文本模式给出阅读提示，漫画模式画一句
+        # "还没有打开漫画"——两种空状态本来就该长得不一样。
+        if self.book is not None and self.book.kind == KIND_COMIC:
+            self.reader.show_book(None)
+        else:
+            self._text_reader.show_book(None)
+            self._text_reader.set_chapter(
+                "把 TXT 文件拖到窗口里，或者点左下角「打开」。\n\n"
+                "· 滚轮上下滚动，滚到章末再滚一下就是下一章\n"
+                "· 老板键把窗口整个藏起来，再按一次回来\n"
+                "· 托盘图标右键可以调不透明度、打开设置、退出\n"
+                "· 窗口位置和阅读进度会自动记住",
+                offset=0,
+            )
         self.title_label.setText("MiniReader")
         self.chapter_label.setText("")
         self.progress_label.setText("")
         self.status_label.setText("还没有打开文件")
+        self._sync_comic_buttons()
 
     # ---- status ----------------------------------------------------------
 
@@ -1953,24 +2729,55 @@ class MiniWindow(QWidget):
         book = self.book
         if book is None:
             return
-        # 首末章时禁用按钮，比让用户点了没反应要好——箭头灰掉本身就是"到头了"的提示。
+        # 首末章/首末页时禁用按钮，比让用户点了没反应要好——箭头灰掉本身就是"到头了"
+        # 的提示。总数一律走 BookBase.position_count：文本是章数，漫画是页数。
+        total = book.position_count
         self.prev_button.setEnabled(self.chapter_index > 0)
-        self.next_button.setEnabled(self.chapter_index < book.chapter_count - 1)
+        self.next_button.setEnabled(self.chapter_index < total - 1)
         if self.toc_panel.isVisible():
             self.toc_panel.set_current(self.chapter_index)
-        percent = (self.chapter_index + 1) * 100.0 / book.chapter_count if book.chapter_count else 0.0
+        # 底栏右侧：位置和进度各自固定一格，滚动时两个数字不会互相挤动。
+        # 位置文本由 Position.label() 拼——"第 x/y 章"和"第 x/y 页"因此只有一处
+        # 实现，控件名（StatusLabel / ProgressLabel）和文本格式都和改动前一致。
+        position = self.reader.current_position()
+        self.chapter_label.setText(position.label)
+        self.progress_label.setText(position.text())
+        # 次要信息退到 status_label：文本是「章节标题 · 编码 · 体积」，
+        # 漫画是「页码名 · 类型 · 体积 · 页尺寸」。
+        details = self._status_details(position)
+        self.status_label.setText(" · ".join(details))
+        self.status_label.setToolTip(self._status_tip(book))
+
+    def _status_details(self, position) -> list[str]:
+        """底栏次要信息。两种书各自的字段不同，所以分开算。"""
+        book = self.book
+        if book.kind == KIND_COMIC:
+            title = self._page_title()
+            page = book.page(self.chapter_index)
+            size = ""
+            if page is not None and page.size_known:
+                size = f"{page.width}×{page.height}"
+            return [part for part in (title, size, self._comic_reader.zoom_tip(), book.source_label) if part]
         chapter = book.chapter(self.chapter_index)
         title = (chapter.title if chapter else "") or ""
         if len(title) > TITLE_MAX:
             title = title[: TITLE_MAX - 1] + "…"
-        # 底栏右侧：章节号和进度各自固定一格，滚动时两个数字不会互相挤动。
-        # 进度固定两位小数（QQ 实测格式「6.54%」），窄底栏里宽度也恒定不跳。
-        self.chapter_label.setText(f"第 {self.chapter_index + 1}/{book.chapter_count} 章")
-        self.progress_label.setText(f"{percent:.2f}%")
-        # 次要信息退到 status_label：书名 · 编码 · 体积。
-        details = [part for part in (title, book.encoding_label, human_size(book.size)) if part]
-        self.status_label.setText(" · ".join(details))
-        self.status_label.setToolTip(book.split_summary())
+        return [part for part in (title, book.encoding_label, human_size(book.size)) if part]
+
+    def _status_tip(self, book) -> str:
+        if book.kind == KIND_COMIC:
+            return "\n".join(part for part in (book.title, book.describe(), *book.notes) if part)
+        return book.split_summary()
+
+    def _page_title(self) -> str:
+        """The current page's file name, for the bottom bar. Truncated like a chapter."""
+        page = self.book.page(self.chapter_index) if self.book is not None else None
+        if page is None:
+            return ""
+        name = page.name or ""
+        if len(name) > TITLE_MAX:
+            name = name[: TITLE_MAX - 1] + "…"
+        return name
 
     def set_warning(self, text: str) -> None:
         self.warn_label.setText(text or "")
@@ -2099,37 +2906,120 @@ class MiniWindow(QWidget):
     # ---- drag and drop ---------------------------------------------------
 
     def dragEnterEvent(self, event) -> None:  # noqa: N802
-        if self._first_txt(event.mimeData()) is not None:
+        if self._first_supported(event.mimeData()) is not None:
             event.acceptProposedAction()
             return
         event.ignore()
 
     def dropEvent(self, event) -> None:  # noqa: N802
-        path = self._first_txt(event.mimeData())
+        path = self._first_supported(event.mimeData())
         if path:
             self.load_path(path)
             event.acceptProposedAction()
             return
+        # 拖进来一个我们不认识的文件：给一句话，而不是让拖放悄无声息地失败。
+        # dragEnterEvent 已经 ignore 过，所以系统光标本来就显示"禁止"，这里只是
+        # 补上原因——用户看到红圈时最想知道的就是"为什么"。
+        note = self._first_drop_note(event.mimeData())
+        if note:
+            self.set_warning(note)
         event.ignore()
 
     @staticmethod
-    def _first_txt(mime) -> str | None:
+    def _local_urls(mime) -> list[str]:
         if not mime.hasUrls():
-            return None
-        for url in mime.urls():
-            if url.isLocalFile():
-                local = url.toLocalFile()
-                if local.lower().endswith(".txt"):
+            return []
+        return [url.toLocalFile() for url in mime.urls() if url.isLocalFile()]
+
+    @classmethod
+    def _first_supported(cls, mime) -> str | None:
+        """拖放载荷里第一个我们能打开的文件（或文件夹）。
+
+        判据是格式表，不再硬编码 `.txt`。文件夹单独一条分支：格式表按扩展名判断，
+        而文件夹没有扩展名，问它只会得到"不支持的文件类型"——所以文件夹问的是
+        "里面有没有图片"（图片文件夹是一本漫画）。表里列着但还没实现的格式
+        （阶段 3 的 PDF 等）返回 None，它们会走 `_first_drop_note()` 拿到
+        "要等阶段 N"的说明，而不是被当成乱码文件。
+        """
+        for local in cls._local_urls(mime):
+            if os.path.isdir(local):
+                if folder_has_images(local):
                     return local
+                continue
+            if not support_note(local):
+                return local
         return None
+
+    @classmethod
+    def _first_drop_note(cls, mime) -> str:
+        """Why nothing in the payload could be opened.
+
+        只在整批都打不开时才被调用，所以按载荷顺序报第一个原因就够了：用户拖进来的
+        通常就是一个文件，报"PDF 要等阶段 3"比报"没有能打开的文件"有用得多。
+        """
+        for local in cls._local_urls(mime):
+            if os.path.isdir(local):
+                if not folder_has_images(local):
+                    return "这个文件夹里没有能看的图片"
+                continue
+            note = support_note(local)
+            if note:
+                return note
+        return "拖进来的东西里没有能打开的文件"
+
+    #: 旧名字，阶段 1 的测试直接调它；语义与 `_first_supported` 相同。
+    _first_txt = _first_supported
 
     # ---- persistence -----------------------------------------------------
 
     def _on_scrolled(self) -> None:
+        # 漫画的"滚动"就是翻页，位置真的变了：窗口这一层的 `chapter_index` 必须跟着
+        # 走，否则底栏还停在旧页码、首末页按钮的灰/亮还是旧的，900ms 后写进
+        # progress.json 的也是旧页——实测滚轮翻到第 2 页后 `current_progress()` 仍报
+        # `page=0`，重开又从第 1 页开始。
+        #
+        # 只有漫画需要同步：文本的 `scrolled` 是**章内像素滚动**，章号没变，底栏那格
+        # 本来就只在换章时刷新（阶段 1 验收过的行为），那条路一个字节都不动。
+        if self.book is not None and self.book.kind == KIND_COMIC:
+            self.chapter_index = self.book.clamp(self._comic_reader.index)
+            self._update_status()
         self._progress_timer.start()
 
     def current_progress(self) -> Progress:
-        return Progress(chapter=self.chapter_index, offset=self.reader.current_offset())
+        """当前位置，文本用像素偏移、漫画用页码。
+
+        `chapter` 两种书都存（它就是"第几个位置"），`page` 只对漫画有意义。
+        这样旧 progress.json 原样读得进来，新文件被旧版本读到时也只是忽略多出来的键。
+
+        `pdf_kind` 要**原样带过去**。这个对象是 `persist_progress()` 写进 store 的
+        全部内容，而 `set_book()` 每次都会调它——如果这里新建一个干净的 Progress，
+        用户刚在右键菜单里做的「按漫画打开」会在同一个调用栈里被自己的进度保存抹掉，
+        表现就是"选了也没用，下次还问"。
+        """
+        if self.book is not None and self.book.kind == KIND_COMIC:
+            return Progress(
+                chapter=self.chapter_index,
+                offset=0,
+                page=self.chapter_index,
+                mode=self._comic_reader.mode,
+                pdf_kind=self._remembered_pdf_kind(),
+            )
+        return Progress(
+            chapter=self.chapter_index,
+            offset=self.reader.current_offset(),
+            pdf_kind=self._remembered_pdf_kind(),
+        )
+
+    def _remembered_pdf_kind(self) -> str:
+        """This book's stored "read it as ..." answer, or "" when there is none.
+
+        Only dual-identity files can have one, so everything else short-circuits
+        before touching the store - `persist_progress()` runs on every page turn
+        and must not do a dictionary lookup for a TXT.
+        """
+        if self.book is None or _ext_of(self.book.path) not in DUAL_IDENTITY_EXTS:
+            return ""
+        return self.progress.get(self.book.id).pdf_kind
 
     def persist_progress(self) -> None:
         """Remember where the reader is, keyed by book id.

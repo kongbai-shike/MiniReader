@@ -22,16 +22,20 @@ from minireader.hotkeys import (  # noqa: E402
     register_all,
     spec_from_qt,
 )
-from minireader.qt import Qt  # noqa: E402
+from minireader.qt import Qt, enum_value  # noqa: E402
 
 
 def qt(name: str) -> int:
-    """A Qt key enum by name, tolerating Qt 5's flat namespace and Qt 6's nesting."""
+    """A Qt key enum by name, tolerating Qt 5's flat namespace and Qt 6's nesting.
+
+    `enum_value()` rather than `int()`: Qt 6's scoped enums are not int subclasses,
+    so `int(Qt.Key_A)` raises TypeError on PySide6 6.12.
+    """
     value = getattr(Qt, name, None)
     if value is None:
         value = getattr(Qt.Key, name.split("_", 1)[1], None)
     assert value is not None, f"this binding has no {name}"
-    return int(value)
+    return enum_value(value)
 
 
 def mod(name: str) -> int:
@@ -39,7 +43,7 @@ def mod(name: str) -> int:
     if value is None:
         value = getattr(Qt.KeyboardModifier, name, None)
     assert value is not None, f"this binding has no {name}"
-    return int(value)
+    return enum_value(value)
 
 
 class TestParseHotkey(unittest.TestCase):

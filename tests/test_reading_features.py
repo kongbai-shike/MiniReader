@@ -16,6 +16,7 @@ from minireader.qt import QApplication, QEvent, QLabel, Qt
 
 from .test_ui_offscreen import (
     WindowTestCase,
+    _enter_event,
     assert_at_leave_hide_floor,
     make_book,
 )
@@ -997,7 +998,8 @@ class TestMiniLayoutAndOpacityAxes(ReadingFeatureCase):
 
         class FakeDialog:
             def __init__(self, settings, parent=None, on_preview=None,
-                         on_background=None, on_content=None, on_leave_hide=None):
+                         on_background=None, on_content=None, on_leave_hide=None,
+                         on_theme=None):
                 # 模拟用户拖动两根滑块，然后按"取消"。
                 on_background(10)
                 on_content(20)
@@ -1091,10 +1093,14 @@ class TestQQMiniStyleAlignment(ReadingFeatureCase):
 
     def test_tooltip_qss_lands_on_the_application(self) -> None:
         """QToolTip 是顶层窗口，只认应用级样式表；窗口创建后必须已安装且幂等。"""
+        from minireader.ui.theme import ACTIVE_EXTRAS
+
         sheet = _app.styleSheet()
         self.assertIn("MiniReaderTooltip", sheet)
         self.assertIn("QToolTip", sheet)
-        self.assertIn("#262626", sheet)
+        # tooltip 底色从活动主题取（深色 #262626、白昼 #ffffff）：钉死字面量就等于把
+        # 白昼主题下的"白底白字"焊死在测试里。
+        self.assertIn(ACTIVE_EXTRAS["tooltip_bg"], sheet)
         self.assertEqual(sheet.count("MiniReaderTooltip"), 1, "重复建窗不得重复追加")
 
     def test_dialog_stylesheet_respects_the_12px_floor(self) -> None:
@@ -1135,7 +1141,7 @@ class TestMouseLeaveHide(ReadingFeatureCase):
         window.leaveEvent(QEvent(QEvent.Leave))
 
     def _enter(self, window) -> None:
-        window.enterEvent(QEvent(QEvent.Enter))
+        window.enterEvent(_enter_event())
 
     def test_disabled_by_default_so_leaving_does_nothing(self) -> None:
         window = self.window

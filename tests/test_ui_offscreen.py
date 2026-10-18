@@ -30,7 +30,12 @@ if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
 from minireader.qt import (  # noqa: E402
+    EDGE_BOTTOM,
+    EDGE_LEFT,
+    EDGE_RIGHT,
+    EDGE_TOP,
     QApplication,
+    QEnterEvent,
     QEvent,
     QGroupBox,
     QKeyEvent,
@@ -44,6 +49,8 @@ from minireader.qt import (  # noqa: E402
     QWheelEvent,
     Qt,
     Signal,
+    available_screen_geometry,
+    enum_value,
     install_message_filter,
     native_platform_available,
 )
@@ -71,6 +78,19 @@ install_message_filter(_NOISE)
 _app = QApplication.instance() or QApplication([])
 
 BODY = "正文内容。" * 80
+
+
+def _enter_event():
+    """A `QEvent.Enter` the window's `enterEvent` will actually accept.
+
+    Qt 6 tightened the signature to `enterEvent(QEnterEvent)`: handing it a bare
+    `QEvent(QEvent.Enter)` - which is what these tests used to do, and what Qt 5
+    tolerated - raises TypeError on PySide6 6.12. A real pointer always delivers a
+    `QEnterEvent`, so this is the more faithful stand-in, not just a workaround.
+    `QEnterEvent` exists and reports `type() == QEvent.Enter` on both bindings.
+    """
+    point = QPointF(10.0, 10.0)
+    return QEnterEvent(point, point, point)
 
 
 def make_book(directory: Path, name: str = "book.txt", chapters: int = 3) -> Path:
@@ -270,8 +290,10 @@ class TestTeardownHygiene(WindowTestCase):
         window = self.make_window(path=self.book_path)
         window.apply_opacity(40)
         self.assertEqual(
-            int(window._opacity_anim.state()),
-            int(qt_compat.QtCore.QAbstractAnimation.Running),
+            # `enum_value()`, not `int()`: QAbstractAnimation.State is a scoped enum
+            # in Qt 6 and `int()` on it raises TypeError under PySide6 6.12.
+            enum_value(window._opacity_anim.state()),
+            enum_value(qt_compat.QtCore.QAbstractAnimation.Running),
             "test premise: the 160 ms fade is actually in flight",
         )
         self._assert_gone_after_dispose(window)
@@ -374,8 +396,12 @@ class TestOpeningFiles(WindowTestCase):
         txt.setUrls([QUrl.fromLocalFile(str(self.book_path))])
         self.assertTrue(same_path(window._first_txt(txt), self.book_path))
 
+        # `.exe` 从来不在格式表里，与相位无关，所以它是"打不开"的稳定样本。
+        # 阶段 3 之前这里用的是 `.pdf`，阶段 6 之前是 `.mobi`，阶段 8 之前是
+        # `.cbr`——每解锁一个格式样本就往后挪；**阶段 8 之后格式表里再没有锁着的
+        # 行了**，于是改用表外的扩展名。断言的意思一个字没变：表里没有、打不开。
         other = QMimeData()
-        other.setUrls([QUrl.fromLocalFile(str(self.tmp / "a.pdf"))])
+        other.setUrls([QUrl.fromLocalFile(str(self.tmp / "a.exe"))])
         self.assertIsNone(window._first_txt(other))
 
         nothing = QMimeData()
@@ -395,7 +421,7 @@ class TestOpeningFiles(WindowTestCase):
         mime = QMimeData()
         mime.setUrls(
             [
-                QUrl.fromLocalFile(str(self.tmp / "a.pdf")),
+                QUrl.fromLocalFile(str(self.tmp / "a.exe")),
                 QUrl.fromLocalFile(str(self.book_path)),
                 QUrl.fromLocalFile(str(self.tmp / "book.txt")),
             ]
@@ -727,17 +753,17 @@ class TestEdgesAt(WindowTestCase):
         window = self.make_window()
         window.setGeometry(0, 0, 400, 300)
         edges = window.edges_at(QPoint(1, 1))
-        self.assertTrue(edges & int(Qt.LeftEdge))
-        self.assertTrue(edges & int(Qt.TopEdge))
+        self.assertTrue(edges & EDGE_LEFT)
+        self.assertTrue(edges & EDGE_TOP)
 
     def test_each_side_is_detected(self) -> None:
         # 400×400：阶段 2 起窗口最小高 360，300 会被 Qt 钳到 360，底边断言就得跟着换。
         window = self.make_window()
         window.setGeometry(0, 0, 400, 400)
-        self.assertTrue(window.edges_at(QPoint(1, 200)) & int(Qt.LeftEdge))
-        self.assertTrue(window.edges_at(QPoint(399, 200)) & int(Qt.RightEdge))
-        self.assertTrue(window.edges_at(QPoint(200, 1)) & int(Qt.TopEdge))
-        self.assertTrue(window.edges_at(QPoint(200, 399)) & int(Qt.BottomEdge))
+        self.assertTrue(window.edges_at(QPoint(1, 200)) & EDGE_LEFT)
+        self.assertTrue(window.edges_at(QPoint(399, 200)) & EDGE_RIGHT)
+        self.assertTrue(window.edges_at(QPoint(200, 1)) & EDGE_TOP)
+        self.assertTrue(window.edges_at(QPoint(200, 399)) & EDGE_BOTTOM)
 
     def test_the_middle_is_not_the_border(self) -> None:
         window = self.make_window()
@@ -749,7 +775,7 @@ class TestEdgesAt(WindowTestCase):
         on it must count."""
         window = self.make_window()
         window.setGeometry(0, 0, 400, 300)
-        self.assertTrue(window.edges_at(QPoint(2, 150)) & int(Qt.LeftEdge))
+        self.assertTrue(window.edges_at(QPoint(2, 150)) & EDGE_LEFT)
 
 
 def _wmouse(kind, local, glob, button, buttons) -> QMouseEvent:
@@ -799,14 +825,14 @@ class TestEdgeResize(WindowTestCase):
         window.setGeometry(100, 80, 480, 400)
         start = window.geometry()
         cases = {
-            int(Qt.RightEdge): (50, 0, (100, 80, 530, 400)),
-            int(Qt.LeftEdge): (50, 0, (150, 80, 430, 400)),
-            int(Qt.BottomEdge): (0, 40, (100, 80, 480, 440)),
-            int(Qt.TopEdge): (0, 40, (100, 120, 480, 360)),
-            int(Qt.TopEdge) | int(Qt.LeftEdge): (50, 40, (150, 120, 430, 360)),
-            int(Qt.BottomEdge) | int(Qt.RightEdge): (50, 40, (100, 80, 530, 440)),
-            int(Qt.TopEdge) | int(Qt.RightEdge): (50, 40, (100, 120, 530, 360)),
-            int(Qt.BottomEdge) | int(Qt.LeftEdge): (50, 40, (150, 80, 430, 440)),
+            EDGE_RIGHT: (50, 0, (100, 80, 530, 400)),
+            EDGE_LEFT: (50, 0, (150, 80, 430, 400)),
+            EDGE_BOTTOM: (0, 40, (100, 80, 480, 440)),
+            EDGE_TOP: (0, 40, (100, 120, 480, 360)),
+            EDGE_TOP | EDGE_LEFT: (50, 40, (150, 120, 430, 360)),
+            EDGE_BOTTOM | EDGE_RIGHT: (50, 40, (100, 80, 530, 440)),
+            EDGE_TOP | EDGE_RIGHT: (50, 40, (100, 120, 530, 360)),
+            EDGE_BOTTOM | EDGE_LEFT: (50, 40, (150, 80, 430, 440)),
         }
         for edges, (dx, dy, expected) in cases.items():
             with self.subTest(edges=edges):
@@ -817,12 +843,12 @@ class TestEdgeResize(WindowTestCase):
     def test_cursor_shape_matches_the_edge_mask(self) -> None:
         shape = MiniWindow._cursor_for_edges
         self.assertEqual(shape(0), None)
-        self.assertEqual(shape(int(Qt.LeftEdge) | int(Qt.TopEdge)), Qt.SizeFDiagCursor)
-        self.assertEqual(shape(int(Qt.RightEdge) | int(Qt.BottomEdge)), Qt.SizeFDiagCursor)
-        self.assertEqual(shape(int(Qt.RightEdge) | int(Qt.TopEdge)), Qt.SizeBDiagCursor)
-        self.assertEqual(shape(int(Qt.LeftEdge) | int(Qt.BottomEdge)), Qt.SizeBDiagCursor)
-        self.assertEqual(shape(int(Qt.LeftEdge)), Qt.SizeHorCursor)
-        self.assertEqual(shape(int(Qt.BottomEdge)), Qt.SizeVerCursor)
+        self.assertEqual(shape(EDGE_LEFT | EDGE_TOP), Qt.SizeFDiagCursor)
+        self.assertEqual(shape(EDGE_RIGHT | EDGE_BOTTOM), Qt.SizeFDiagCursor)
+        self.assertEqual(shape(EDGE_RIGHT | EDGE_TOP), Qt.SizeBDiagCursor)
+        self.assertEqual(shape(EDGE_LEFT | EDGE_BOTTOM), Qt.SizeBDiagCursor)
+        self.assertEqual(shape(EDGE_LEFT), Qt.SizeHorCursor)
+        self.assertEqual(shape(EDGE_BOTTOM), Qt.SizeVerCursor)
 
     # -- minimum size ------------------------------------------------------
 
@@ -1407,7 +1433,7 @@ class TestLeaveHide(WindowTestCase):
         window._apply_leave_hide()
         assert_at_leave_hide_floor(self, window)
 
-        window.enterEvent(QEvent(QEvent.Enter))
+        window.enterEvent(_enter_event())
         _app.processEvents()
         self.assertAlmostEqual(window.windowOpacity(), 0.7, places=2)
         self.assertIsNone(window._opacity_before_hide)
@@ -1417,7 +1443,7 @@ class TestLeaveHide(WindowTestCase):
         window = self._armed_window(opacity=80)
         window.leaveEvent(QEvent(QEvent.Leave))
         self.assertTrue(window._leave_hide_timer.isActive())
-        window.enterEvent(QEvent(QEvent.Enter))
+        window.enterEvent(_enter_event())
         _app.processEvents()
         self.assertFalse(window._leave_hide_timer.isActive())
         self.assertIsNone(window._opacity_before_hide)
@@ -1438,7 +1464,7 @@ class TestLeaveHide(WindowTestCase):
         window._apply_leave_hide()
         window._apply_leave_hide()
         self.assertAlmostEqual(window._opacity_before_hide, 0.6, places=2)
-        window.enterEvent(QEvent(QEvent.Enter))
+        window.enterEvent(_enter_event())
         self.assertAlmostEqual(window.windowOpacity(), 0.6, places=2)
 
 
@@ -1866,8 +1892,14 @@ class TestSettingsDialog(WindowTestCase):
         """The groups stack to ~713 px, which does not fit a 1366x768 office laptop with
         its taskbar - the machine this app is for. `resize()` alone does NOT fix that:
         the layout re-activates on show() and grows the dialog back (measured: a 720 px
-        dialog stayed 720 px on the offscreen plugin's 600 px screen)."""
-        avail = QApplication.desktop().availableGeometry()
+        dialog stayed 720 px on the offscreen plugin's 600 px screen).
+
+        `available_screen_geometry()` rather than `QApplication.desktop()`: the latter
+        is gone in Qt 6 (PySide6 raises AttributeError), so this test used to fail on
+        the binding, not on the behaviour it is guarding.
+        """
+        avail = available_screen_geometry()
+        self.assertIsNotNone(avail, "offscreen 插件应该有屏")
         limit = max(320, avail.height() - 90)
         dlg = self.dialog()
         try:
@@ -1968,16 +2000,24 @@ class TestSettingsNavigation(WindowTestCase):
 
     # -- nav <-> pages ------------------------------------------------------
 
-    def test_the_nav_lists_four_groups_and_each_row_shows_its_page(self) -> None:
+    def test_the_nav_lists_every_group_and_each_row_shows_its_page(self) -> None:
+        """导航条目与页面必须一一对应。
+
+        数量不写死：阶段 3 加了「漫画与 PDF」之后是 5 页，以后还会有别的分区。
+        真正要守住的是**两边的顺序一致**——`_build()` 用 `zip(NAV_ITEMS, groups)`
+        配对，只改一边会被 zip 静默截断，多出来的页既点不到也不会报错。
+        """
         dlg = self.dialog()
         try:
-            self.assertEqual(dlg._nav.count(), 4)
-            self.assertEqual(dlg._stack.count(), 4)
+            expected = len(NAV_ITEMS)
+            self.assertGreaterEqual(expected, 4)
+            self.assertEqual(dlg._nav.count(), expected)
+            self.assertEqual(dlg._stack.count(), expected)
             self.assertEqual(
-                [dlg._nav.item(i).text() for i in range(4)],
+                [dlg._nav.item(i).text() for i in range(expected)],
                 [title for title, _ in NAV_ITEMS],
             )
-            for row in range(4):
+            for row in range(expected):
                 dlg._nav.setCurrentRow(row)
                 _app.processEvents()
                 self.assertIs(dlg._stack.currentWidget(), dlg._pages[row])
@@ -1994,11 +2034,20 @@ class TestSettingsNavigation(WindowTestCase):
         try:
             controls = [
                 ("正文排版", (dlg.font_combo, dlg.size_slider, dlg.margin_slider)),
+                ("漫画与 PDF", (dlg.pdf_kind_combo, dlg.comic_zoom_combo,
+                                dlg.comic_mode_combo, dlg.cache_slider,
+                                dlg.preload_spin, dlg.binding_combo,
+                                dlg.cover_alone_check)),
                 ("外观", (dlg.opacity_slider, dlg.bg_alpha_slider, dlg.compat_check)),
                 ("窗口", (dlg.snap_check, dlg.leave_hide_check,
                           dlg.on_top_check, dlg.taskbar_check)),
                 ("全局快捷键", tuple(dlg.hotkey_edits.values())),
             ]
+            self.assertEqual(
+                [title for title, _ in controls],
+                [title for title, _ in NAV_ITEMS],
+                "这条列表与 NAV_ITEMS 必须同名同序",
+            )
             for row, (group_title, members) in enumerate(controls):
                 page = dlg._pages[row]
                 boxes = page.findChildren(QGroupBox)
@@ -2017,6 +2066,7 @@ class TestSettingsNavigation(WindowTestCase):
             # Controls never leak onto another page.
             self.assertFalse(dlg._pages[2].isAncestorOf(dlg.size_slider))
             self.assertFalse(dlg._pages[0].isAncestorOf(dlg.snap_check))
+            self.assertFalse(dlg._pages[0].isAncestorOf(dlg.pdf_kind_combo))
         finally:
             self._dispose(dlg)
 

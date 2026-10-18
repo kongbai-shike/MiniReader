@@ -27,6 +27,7 @@ The wheel model is ported from client.js:711-779:
 
 from __future__ import annotations
 
+from ..core.book_base import KIND_TEXT, Position
 from ..qt import (
     PROPORTIONAL_HEIGHT,
     QEasingCurve,
@@ -42,8 +43,11 @@ from ..qt import (
     QVariantAnimation,
     Qt,
     Signal,
+    enum_value,
     event_global_pos,
 )
+from .reader_base import Reader
+from .theme import ACTIVE_EXTRAS
 
 # 让锚点行不要紧贴着视口上边缘，否则那行看起来像被切掉了半个字。
 _ANCHOR_PAD = 4
@@ -52,16 +56,25 @@ _ANCHOR_PAD = 4
 # first_visible_char() 的说明。
 _ANCHOR_PROBE_Y = _ANCHOR_PAD + 1
 
-_SCROLLBAR_QSS = """
-QScrollBar:vertical { background: transparent; width: 8px; margin: 0; }
-QScrollBar::handle:vertical { background: rgba(255,255,255,0.18); border-radius: 4px; min-height: 24px; }
-QScrollBar::handle:vertical:hover { background: rgba(255,255,255,0.30); }
-QScrollBar::add-line, QScrollBar::sub-line { height: 0; }
-QScrollBar::add-page, QScrollBar::sub-page { background: transparent; }
+
+def _scrollbar_qss() -> str:
+    """正文滚动条。
+
+    **必须是函数**：原来这里是模块级常量，颜色在 import 时就插值定死了，切主题
+    不会重算。而且深色下用的是白色 rgba——白昼主题下那两根手柄在白底上完全看不见，
+    所以 `theme.EXTRAS` 里把它按主题翻成黑/白两套。
+    """
+    x = ACTIVE_EXTRAS
+    return f"""
+QScrollBar:vertical {{ background: transparent; width: 8px; margin: 0; }}
+QScrollBar::handle:vertical {{ background: {x['scrollbar_handle']}; border-radius: 4px; min-height: 24px; }}
+QScrollBar::handle:vertical:hover {{ background: {x['scrollbar_handle_hover']}; }}
+QScrollBar::add-line, QScrollBar::sub-line {{ height: 0; }}
+QScrollBar::add-page, QScrollBar::sub-page {{ background: transparent; }}
 """
 
 
-class ReaderView(QTextEdit):
+class ReaderView(Reader, QTextEdit):
     """Scrollable chapter body with wheel-driven page turning."""
 
     chapterRequested = Signal(int)   # +1 next chapter, -1 previous chapter
@@ -82,7 +95,7 @@ class ReaderView(QTextEdit):
         # the scroll keys are handled explicitly below instead.
         self.setTextInteractionFlags(Qt.TextSelectableByMouse)
         self.setTabChangesFocus(True)
-        self.verticalScrollBar().setStyleSheet(_SCROLLBAR_QSS)
+        self.apply_scrollbar_style()
 
         self._wheel_lines = 3
         self._animation_ms = 180
@@ -107,6 +120,10 @@ class ReaderView(QTextEdit):
         self._content_effect: QGraphicsOpacityEffect | None = None
 
     # ---- typography ------------------------------------------------------
+
+    def apply_scrollbar_style(self) -> None:
+        """把当前主题的滚动条样式挂到竖条上（切主题时由 apply_style 顺带调用）。"""
+        self.verticalScrollBar().setStyleSheet(_scrollbar_qss())
 
     def apply_style(self, settings) -> None:
         # 换字号/行距/页边距会让文字重新折行，此时"同样的像素偏移"指向的是**别处的
@@ -133,9 +150,12 @@ class ReaderView(QTextEdit):
         # 正文板，桌面透不过来。边框也去掉，免得在圆角窗口里画出一个直角描边。
         self.setStyleSheet(
             f"QTextEdit {{ background: transparent; border: none; color: {settings.fg};"
-            f" selection-background-color: #444a63;"
+            f" selection-background-color: {ACTIVE_EXTRAS['selection_bg']};"
             f" selection-color: {settings.fg}; }}"
         )
+        # 选中底色随主题走（深色 #444a63 / 白昼 #c9d8f2）。这里同时把滚动条重挂一次，
+        # 因为切主题走的就是 apply_style 这条通道。
+        self.apply_scrollbar_style()
         self.setFrameShape(QFrame.NoFrame)
         self.document().setDocumentMargin(float(settings.margin))
         self._apply_line_height()
@@ -189,7 +209,11 @@ class ReaderView(QTextEdit):
         """Line spacing AND first-line indent live in the block format: Qt stylesheets
         have neither line-height nor text-indent."""
         block_format = QTextBlockFormat()
-        block_format.setLineHeight(self._line_height_pct, PROPORTIONAL_HEIGHT)
+        # 两个参数都要 Python int。PySide6 6.12 的签名是
+        # `setLineHeight(height: float, heightType: int)`，而 `LineHeightTypes`
+        # 在 Qt 6 里不再是 int 的子类——直接传枚举会 TypeError（实测 374 条测试
+        # 因此变红）。`enum_value()` 在 PyQt5/PySide6 上都能拿到 int。
+        block_format.setLineHeight(int(self._line_height_pct), enum_value(PROPORTIONAL_HEIGHT))
         # 首行缩进 N 个汉字宽。用"国"而不是平均字宽：等宽感对中文最重要，em 方块字
         # 宽度一致；量的是**当前**字体（setFont 之后），所以字号变了缩进跟着变。
         # QFontMetrics.width 在 Qt6 被移除，horizontalAdvance 在 Qt 5.11 起可用，
@@ -429,3 +453,87 @@ class ReaderView(QTextEdit):
         # must be re-settled against the new range.
         if self._pending():
             QTimer.singleShot(0, self._settle_offset)
+
+    # ---- Reader 适配层（阶段 1 新增，纯转发） -----------------------------
+    #
+    # 上面 431 行既有实现一个字都没动。这一节只是把 ReaderView 已有的能力
+    # 按 reader_base.Reader 的接口重新命名，好让 MiniWindow 在阶段 2 之后
+    # 能一视同仁地对待文本阅读器和漫画阅读器。
+    #
+    # 注意：**不要**在这里定义 viewport()。基类放在 MRO 最前，任何同名方法
+    # 都会盖掉 Qt 自己的实现，而 window.py:559 要用 self.reader.viewport()
+    # 装事件过滤器、window.py:1843 要用它做边缘缩放的判定面。
+    # 详见 reader_base.py 的模块说明。
+
+    #: 最近一次 show_book() 交给这本书；类级默认值让访问器在第一次打开书
+    #: 之前也是安全的（这样 __init__ 不必新增任何一行）。
+    _book = None
+    _index = 0
+
+    def show_book(
+        self,
+        book,
+        *,
+        index: int = 0,
+        offset: int = 0,
+        at_end: bool = False,
+        char_offset: int | None = None,
+    ) -> None:
+        """渲染 book 的第 index 章。
+
+        与 MiniWindow.show_chapter() 同义，区别只是把"哪一章"作为参数传进来：
+        阅读器自己记下章号，total_positions() / current_position() 才算得出来
+        （窗口仍然拥有 self.chapter_index，两边必须保持一致）。
+
+        char_offset 一并转交，好让阶段 2 把 window.py:1600 的 set_chapter() 调用
+        换成这里时不会丢掉"按字符还原位置"这条路径（改字体后它比像素可靠）。
+
+        book=None 表示"清空"：占位文案由窗口用 set_chapter() 直接给（它是一段
+        不属于任何一本书的文字），这里只把书摘掉，让 current_position() 回到 0/0。
+        """
+        self._book = book
+        if book is None:
+            self._index = 0
+            return
+        self._index = book.clamp(index)
+        self.set_chapter(
+            book.chapter_body(self._index),
+            offset=offset,
+            at_end=at_end,
+            char_offset=char_offset,
+        )
+
+    def next_page(self) -> None:
+        self.chapterRequested.emit(1)
+
+    def prev_page(self) -> None:
+        self.chapterRequested.emit(-1)
+
+    def goto(self, position) -> None:
+        if self._book is None:
+            return
+        self.show_book(self._book, index=position.index, offset=position.offset)
+
+    def current_position(self):
+        book = self._book
+        if book is None:
+            return Position(kind=KIND_TEXT, index=0, offset=0, total=0)
+        return Position(
+            kind=KIND_TEXT,
+            index=self._index,
+            offset=self.current_offset(),
+            total=book.position_count,
+        )
+
+    def total_positions(self) -> int:
+        return self._book.position_count if self._book is not None else 0
+
+    def progress_percent(self) -> float:
+        return self.current_position().percent
+
+    def scrollbar(self):
+        return self.verticalScrollBar()
+
+    def stop(self) -> None:
+        """停掉正在跑的滚动动画。没有动画时调用也是安全的。"""
+        self._cancel_anim()

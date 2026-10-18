@@ -17,6 +17,17 @@ rem ===========================================================================
 setlocal
 cd /d "%~dp0"
 
+rem --- 代码页与 Python 输出编码 --------------------------------------------
+rem 这个脚本是 UTF-8（含中文），tools\make_icon.py 的自查会 print ✓ / ✗。
+rem cmd.exe 默认代码页 936，两者都会变成乱码；更糟的是那两个字符编不出来，
+rem 会让 make_icon.py 直接 UnicodeEncodeError，打包卡在第一步。
+rem chcp 65001 让 cmd 按 UTF-8 解读本文件与子进程输出；PYTHONIOENCODING
+rem 是给 Python 的兜底（工具脚本自己也会 reconfigure stdout，见
+rem tools\make_icon.py::force_utf8_console，两道都留着更保险）。
+rem >nul 是因为 chcp 自己会打印一行「Active code page: 65001」，没必要看。
+chcp 65001 >nul
+set PYTHONIOENCODING=utf-8
+
 set PY=py -3.12
 set PYI=%PY% -m PyInstaller
 

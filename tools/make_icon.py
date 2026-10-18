@@ -25,6 +25,34 @@ from PyQt5.QtGui import QImage
 
 # Qt 只在生成图标时需要，所以放在 main 里 import，`--help` 之类不用先起 Qt。
 SIZES = (16, 24, 32, 48, 64, 128, 256)
+
+
+def force_utf8_console() -> None:
+    """让这个脚本的输出在中文 Windows 上不被代码页吃掉。
+
+    自查那段会 print `✓` / `✗`（U+2713 / U+2717）。cmd.exe 默认代码页 936，
+    编不出这两个字符，于是打包的第一步就死在这里：
+
+        UnicodeEncodeError: 'gbk' codec can't encode character '\\u2713'
+
+    这和 `minireader/__main__.py` 的 `_force_utf8_console()` 是同一件事、
+    同一个做法（那边记录过一次同类的历史：只在 `--check` 里调，结果 `--smoke`
+    重定向到文件时是本地 ANSI 代码页）。这里把它放在 `main()` 的第一行，
+    所以 `--help`、正常生成、自查三条路都覆盖到。
+
+    整段包在 try/except 里：输出格式永远不该让脚本崩掉。
+    """
+    try:
+        import ctypes
+
+        if sys.platform == "win32":
+            ctypes.windll.kernel32.SetConsoleOutputCP(65001)
+        for stream in (sys.stdout, sys.stderr):
+            reconfigure = getattr(stream, "reconfigure", None)
+            if reconfigure is not None:
+                reconfigure(encoding="utf-8", errors="replace")
+    except Exception:  # noqa: BLE001 - output formatting must never break the build
+        pass
 # 256 及以上用 PNG 负载：这些尺寸下 BMP 太大（256×256×4B = 256 KB vs PNG 几 KB）。
 PNG_FROM = 128
 
@@ -239,6 +267,7 @@ def verify_ico(path: Path) -> bool:
 
 
 def main(argv: list[str]) -> int:
+    force_utf8_console()
     default = Path(__file__).resolve().parent.parent / "assets" / "minireader.ico"
     out = Path(argv[1]).resolve() if len(argv) > 1 else default
 

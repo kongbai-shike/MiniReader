@@ -73,8 +73,62 @@ EXCLUDES = [
     "tkinter",                  # 本项目是 Qt 程序，但很多环境下 tkinter 会被捎带进来
     "unittest",                 # 测试从源码跑，不进 exe
     "pydoc", "doctest", "pdb", "bdb", "lib2to3",
-    "distutils", "setuptools", "pip", "pkg_resources", "wheel",
+    # **不要**在这里写 "distutils"。Python 3.12 把 distutils 从标准库移除了，改由
+    # setuptools 内置（`setuptools/_distutils`）提供；PyInstaller 为此有一个
+    # `hooks/pre_safe_import_module/hook-distutils.py`：只要图里有**任何**模块
+    # import distutils，它就调用 `add_alias_module("setuptools._distutils", "distutils")`
+    # 建别名。而 `excludes` 里的 "distutils" 会把同一个名字登记成 ExcludedModule，
+    # 两者撞上就是打包直接中断：
+    #
+    #     ValueError: Target module "distutils" already imported as
+    #     "ExcludedModule('distutils',)".          （depend/imphookapi.py:161）
+    #
+    # 实测最小复现：一个只写 `import distutils` 的 main.py + `--exclude-module distutils`
+    # 就复现；不 import 它的 main.py 则正常。本项目与 PyQt5 都不 import distutils，
+    # 触发它的是下面 JUNK 里那条链上的 `cffi._shimmed_dist_utils`——所以 JUNK 剪掉
+    # 之后 distutils 本来也不会被收进来，这里不排它只是让「任何环境都能打包成功」。
+    "setuptools", "pip", "pkg_resources", "wheel",
     "PyInstaller",
+    # --- 被 loguru 的死代码拖进来的 Jupyter 全家桶（约 100 MB，实测）------------
+    # 链条只有一条，起点是 `mobi`：
+    #
+    #     minireader.core.mobidoc -> mobi -> loguru -> loguru._logger
+    #
+    # 而 `loguru/_logger.py` 里有这么一段（第 10-21 行）：
+    #
+    #     if getattr(builtins, "__IPYTHON__", False) and (stream is sys.stdout ...):
+    #         import ipykernel
+    #         import IPython
+    #
+    # 它在 Jupyter 里才成立，对普通进程是死代码——但 PyInstaller 是**静态**分析，
+    # 它照样顺着这两个 import 把整条依赖链收进包里。实测一次带上它的产物：
+    #
+    #     PyQt5 52.3 MB + numpy.libs 36.4 + matplotlib 11.5 + cryptography 8.7
+    #     + pypdfium2_raw 7.0 + numpy 5.0 + PIL 4.7 + jedi 3.3 + ...  = 174.9 MB
+    #
+    # 对照：不带这条链时是 73.6 MB。差出来的 100 MB 里没有一行是本项目会执行的
+    # 代码（`mobi` 只需要 `loguru` 的 logger 本身）。
+    #
+    # 排除是按名字的，所以列的是链上的**根**（IPython / ipykernel）加上实测确实
+    # 进了包的整块。它们全都是「没有任何本项目代码路径会 import」的：本项目
+    # `core/encoding.py` 自己写编码判定（不用 chardet），`core/images.py` 用 Qt 解
+    # 图片（不用 PIL），PDF 走 pypdfium2（不用 numpy/cryptography），RAR 走
+    # rarfile + 外部 unrar/7z（rarfile 的加密只用标准库 hashlib/hmac）。
+    #
+    # 注意 `mobi` 和 `loguru` 本身**不在此列**：装了 mobi 的用户要能打开 MOBI/AZW3。
+    "IPython", "ipykernel", "ipywidgets", "jupyter_client", "jupyter_core",
+    "jupyter_events", "nbformat", "nbconvert", "comm", "debugpy", "zmq",
+    "traitlets", "prompt_toolkit", "stack_data", "executing", "asttokens",
+    "pure_eval", "jedi", "parso",
+    "matplotlib", "matplotlib_inline", "mpl_toolkits", "contourpy", "numpy",
+    "PIL", "pygments",
+    "requests", "urllib3", "certifi", "cryptography", "cffi", "Crypto",
+    "jsonschema", "jsonschema_specifications", "referencing", "rfc3987_syntax",
+    "chardet",
+    "yaml", "lark", "rich", "tzdata", "arrow", "orjson", "dateutil", "trio",
+    "jinja2", "markdown_it", "wcwidth", "attr", "attrs", "isoduration",
+    "pyparsing", "platformdirs", "decorator", "anyio", "sniffio", "idna",
+    "regex", "rpds", "tornado", "pyreadline3", "h11", "httpcore", "httpx",
     # 注意：**不要**在这里加 ssl / _ssl / hashlib / _hashlib，也不要删
     # libcrypto-3.dll 和 libssl-3.dll。
     #

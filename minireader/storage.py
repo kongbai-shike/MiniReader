@@ -196,6 +196,49 @@ class Settings:
     # True：鼠标移出窗口时整窗 setWindowOpacity(0) 临时隐身，移回即恢复。这是**临时
     # 覆盖**，不改 opacity 字段，也不同于老板键的 hide()（真隐藏）。默认关闭。
     mouse_leave_hide: bool = False
+    # comics and PDFs
+    #
+    # These are the defaults a *new* comic or PDF opens with. The reading position
+    # itself lives in progress.json, not here - this is what the reader does before
+    # the user has expressed any opinion about a particular book.
+    comic_default_mode: str = "single"   # single | scroll | spread
+    comic_default_zoom: str = "width"    # width | height | original
+    comic_cache_mb: int = 256            # decoded page cache; 64-1024
+    comic_preload: int = 3               # pages to decode either side; 0-10
+    comic_binding: str = "rtl"           # rtl (右綴じ) | ltr, for two-page mode
+    comic_cover_alone: bool = True       # show page 1 by itself in two-page mode
+    # Gap between the two pages in two-page mode, in pixels. 0 because scanned
+    # manga carries its own margin; the setting is for scans cropped to the edge,
+    # where the pages would otherwise touch. 0-32, matching ui/spread.MAX_GUTTER.
+    comic_gutter: int = 0
+    # 窗口外观主题（dark | light）。只定 UI 那一套调色板，**不**改正文的 bg/fg——
+    # 正文配色是用户自己的选择，跟着主题变会让"我只想看白底黑字的正文"落空。
+    # 唯一的例外是「体贴规则」：正文配色仍等于原主题的默认值时跟着新主题走
+    # （见 ui/window.py 的 apply_theme）。
+    theme: str = "dark"
+    # Which reader a PDF opens in when the user has not said. "auto" measures the
+    # document (see core/pdfdoc.py); the other two force it. A per-book choice
+    # remembered in progress.json always wins over this.
+    pdf_default_kind: str = "auto"       # auto | text | comic
+    # The external program that unpacks a CBR/RAR, as found by core/rar.py.
+    #
+    # Cached here so a session does not re-probe four `which` calls plus a
+    # subprocess check every time it starts; the answer is only re-derived when
+    # the user presses 重新检测 in the settings dialog, or when the remembered
+    # path no longer exists (the tool was uninstalled, or settings.json was copied
+    # from another machine - `rar.remember()` treats both as "probe again").
+    #
+    # `unrar_kind` is "unrar" or "7z" and decides both the command line and which
+    # global rarfile reads. It is stored rather than inferred from the filename
+    # because a renamed `7z.exe` is indistinguishable from `UnRAR.exe` by name,
+    # and guessing wrong fails on the first page instead of at probe time.
+    unrar_path: str = ""
+    unrar_kind: str = ""                 # unrar | 7z
+    # True once a probe has actually run and its result was written above. A
+    # *failed* probe stores checked=True with an empty path, which is what makes
+    # the settings page able to say "上次没找到" instead of silently probing again
+    # on every launch.
+    unrar_checked: bool = False
     # global hotkeys ("" = unbound)
     boss_key: str = "Ctrl+Shift+`"
     hotkey_next: str = ""
@@ -258,6 +301,32 @@ class Settings:
             if not isinstance(value, str) or not value.startswith("#"):
                 setattr(self, name, fallback)
         self.disguise_title = _clean_title(self.disguise_title)
+        # Comic/PDF settings. The cache budget is clamped here as well as in
+        # PageCache: a hand-edited settings.json must not be able to ask for a
+        # 40 GB cache, and the reader must not have to defend itself twice.
+        self.comic_cache_mb = max(64, min(_as_int(self.comic_cache_mb, 256), 1024))
+        self.comic_preload = max(0, min(_as_int(self.comic_preload, 3), 10))
+        # 0-32 px, matching ui/spread.MAX_GUTTER. A negative gutter would make the
+        # two pages overlap and the seam maths produce a negative width.
+        self.comic_gutter = max(0, min(_as_int(self.comic_gutter, 0), 32))
+        for name, allowed in (
+            ("comic_default_mode", COMIC_MODES),
+            ("comic_default_zoom", COMIC_ZOOMS),
+            ("comic_binding", COMIC_BINDINGS),
+            ("pdf_default_kind", PDF_KINDS),
+            ("theme", THEME_NAMES),
+        ):
+            setattr(self, name, _as_choice(getattr(self, name), allowed, DEFAULT_SETTINGS[name]))
+        # The CBR/RAR tool cache. A path that is not a string is a hand-edit, so
+        # it becomes empty; and an empty path cannot have a kind, because the pair
+        # is read as a unit by `rar.remember()` - a kind without a path would make
+        # the reader believe it had a tool and then fail to launch "".
+        value = self.unrar_path
+        self.unrar_path = value.strip() if isinstance(value, str) else ""
+        self.unrar_kind = _as_choice(self.unrar_kind, RAR_TOOL_KINDS, "")
+        if not self.unrar_path:
+            self.unrar_kind = ""
+        self.unrar_checked = _as_bool(self.unrar_checked, False)
         for name, _field, _label in HOTKEY_FIELDS:
             value = getattr(self, name)
             setattr(self, name, value.strip() if isinstance(value, str) else "")
@@ -322,10 +391,44 @@ _BOOL_FIELDS = (
     "show_tray",
     "close_to_tray",
     "mouse_leave_hide",
+    "comic_cover_alone",
 )
+
+#: Allowed values for the enum-ish string settings. Declared next to `_BOOL_FIELDS`
+#: because they are the same kind of thing: a list of what `clamp()` will accept.
+#:
+#: These live here rather than being imported from the UI, so that `storage.py`
+#: stays free of `minireader.ui.*` (and of Qt). The tuples are duplicated on
+#: purpose - a settings file that outlives a mode being removed should fall back
+#: to the default, not resurrect it.
+COMIC_MODES = ("single", "scroll", "spread")
+COMIC_ZOOMS = ("width", "height", "original")
+COMIC_BINDINGS = ("rtl", "ltr")
+PDF_KINDS = ("auto", "text", "comic")
+#: 主题名。与 ui/theme.THEMES 的键一致，但**故意不 import** —— storage.py 必须无 Qt、
+#: 无 ui.*（这是从阶段 1 起的硬约束），所以这里照抄一份；tests/test_theme_switch.py
+#: 断言两份一致，抄错会被测出来。
+THEME_NAMES = ("dark", "light")
+#: The external extractors `core/rar.py` knows how to drive. Duplicated here for
+#: the same reason as the four above: `storage.py` does not import `core.rar`
+#: (which would pull in `subprocess` and `shutil` for every launch), and a
+#: settings file naming a tool this build cannot drive must fall back rather than
+#: reach the subprocess layer. `test_rar.py` asserts the two tuples agree.
+RAR_TOOL_KINDS = ("unrar", "7z")
 
 _FALSE_WORDS = {"false", "0", "no", "off", "none", "null", ""}
 _MAX_TITLE = 120
+
+
+def _as_choice(value, allowed: tuple[str, ...], fallback: str) -> str:
+    """Coerce a JSON value to one of `allowed`, else `fallback`.
+
+    Comparison is exact and case-sensitive: these are values the program writes
+    itself, so a near-miss ("Single", "single ") is a hand-edit, and silently
+    accepting it would hide the typo. Anything not in the list falls back rather
+    than raising, which is what `clamp()`'s contract requires.
+    """
+    return value if isinstance(value, str) and value in allowed else fallback
 
 
 def _as_bool(value, fallback: bool) -> bool:

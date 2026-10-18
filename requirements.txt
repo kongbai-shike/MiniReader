@@ -14,13 +14,85 @@ PySide6>=6.5
 # --- 备选：改用 PyQt5 时，注释掉上面一行，启用下面这行 ---
 # PyQt5>=5.15
 
+# --- PDF 支持（可选） ---
+#
+# 只有打开 PDF 才需要它。TXT / EPUB / CBZ / 图片文件夹全部不依赖这一行，
+# 没装的话其余格式照常工作，打开 PDF 时会提示「pip install pypdfium2」。
+# 代码里的 import 一律写在函数体内（见 core/pdfdoc.py 的 `_pdfium()`），
+# 所以 `import minireader.core` 不会因为它缺失而失败。
+pypdfium2>=5.0
+
+# --- MOBI / AZW3 支持（可选，而且刻意不写在这一行） ---
+#
+# 打开 Kindle 电子书需要 `mobi` 库，但它**不在**上面的必装清单里，原因有三：
+#
+#   1. 它是 GPL-3.0。本项目自己用、不分发，所以不受分发义务约束；但一旦把它列为
+#      必装依赖，就等于让每个用户都背上这个许可。等真要发给别人时，要么自研解析、
+#      要么放弃这条格式。
+#   2. 只读 TXT / EPUB / PDF 的用户完全不需要它，装它要多拉 loguru 和
+#      standard-imghdr 两个包。
+#   3. 它的代码里带一个 `import imghdr`，在 Python 3.13 上已经废弃——不进必装行，
+#      就不必替上游的这个决定负责。
+#
+# 想用的话自己装：py -3.12 -m pip install mobi
+#
+# 代码里的 import 一律写在函数体内（见 core/mobidoc.py 的 `_mobi()`），所以
+# `import minireader.core` 不会因为它缺失而失败；没装时打开 .mobi 会提示
+# 「打开 MOBI/AZW3 需要先安装 mobi：pip install mobi」。
+# 想知道装没装：core.mobidoc.is_available()（走 importlib.util.find_spec，不 import）。
+#
+# DRM 只提示不解密：检测到加密的书会给「这本书有 DRM 保护，请先用 Calibre 脱壳后再
+# 打开」，代码里没有任何解密逻辑（tests/test_mobi.py 有一条 AST 守卫盯着这件事）。
+
+# --- CBR / RAR 支持（可选，而且**只装一半是不够的**） ---
+#
+# 打开 RAR 漫画要两样东西，缺一不可：
+#
+#   1. Python 包 rarfile（ISC 许可，纯 Python，无 C 扩展、无传递依赖）。
+#      想用的话自己装：py -3.12 -m pip install rarfile
+#   2. 系统里的 unrar.exe 或 7z.exe。**这一半装不进 pip，也不打包进 exe**：
+#      unrar 的分发许可不允许随程序转发，7-Zip 会给单文件 exe 加约 1.5 MB。
+#
+# 为什么 rarfile 也不写进上面的必装行：和 mobi 同一个理由——只读 TXT / EPUB / PDF /
+# CBZ 的用户不需要它。代码里的 import 一律写在函数体内（见 core/rar.py 的
+# `_rarfile()`），所以 `import minireader.core` 不会因为它缺失而失败。
+#
+# 为什么要外部程序：RAR 的压缩算法是专有的，没有纯 Python 实现。rarfile 只用 Python
+# 解析**头部**（RAR3/RAR5 都行），所以「这个压缩包里有多少页」不装任何东西也能算准；
+# 要取成员字节时它才启动 unrar/7z。一个例外：**STORED（未压缩）成员走 rarfile 自己的
+# `DirectReader`，纯 Python 读，不需要外部程序**——tests/test_rar.py 里的样本就是
+# 这样手搓的真 RAR5，所以正向路径能在没装 WinRAR 的机器上真跑。
+#
+# 探测顺序（core/rar.py::probe）：PATH 里的 unrar → PATH 里的 7z/7za → WinRAR 安装
+# 目录（C:\Program Files\WinRAR\UnRAR.exe 等）→ 7-Zip 安装目录。一个都没有时打开
+# .cbr 会提示「打开 CBR/RAR 需要 WinRAR 或 7-Zip，请先安装其中一个，然后重试」。
+# 找到的结果缓存两份（进程内 + settings.json 的 unrar_path/unrar_kind/unrar_checked），
+# 但**失败结果不缓存**——否则用户装好之后仍会一直读到「请先安装」。设置页有「重新检测」。
+#
+# 每个子进程都带 `-p-`（禁密码提示）和 `timeout=30`（带密码的 RAR 会等 stdin 等到
+# 天荒地老），以及 `creationflags=0x08000000`（CREATE_NO_WINDOW，否则 GUI 程序每翻
+# 一页闪一个黑框）。
+
 # --- 为什么不用别的 ---
+#
+# 不用 PyMuPDF：它是 AGPL-3.0。本项目虽不分发，但 AGPL 的传染性会跟着源码走，
+#   一旦哪天要给谁一份，整包都得按 AGPL 开源。pypdfium2 是 BSD-3-Clause +
+#   Apache-2.0，没有这个负担。pdfium 本身是 Chromium 的 PDF 引擎，和 PyMuPDF
+#   用的 MuPDF 是两套不同的实现，渲染质量对本项目足够。
+#
+# 不用 pdfminer.six / PyPDF2：两者都只能取文字，不能渲染页面，而扫描型 PDF
+#   必须能渲染（见 core/pdfdoc.py 的 `render_page_bmp()`）。一个库两件事都做，
+#   比装两个库各自做一半要简单。
 #
 # PyQt6 刻意不支持：Qt6 改了 QTextEdit 的换行与滚动行为，本项目的滚动像素计算
 #   没有在 PyQt6 上验证过，宁可不声称支持。
 #
 # 不依赖 chardet / charset-normalizer：实测对中文小说的判定不如本项目「按常用字
 #   密度给候选编码打分」稳定，而且省掉一个 C 扩展依赖。
+#
+# 不依赖 Pillow：漫画和 PDF 渲染都走 Qt 自带的图片解码（bmp/gif/jpeg/png/webp
+#   等 20 种格式）。PDF 那一路由 pdfium 渲染成 32 位 BMP 字节直接喂给 QPixmap，
+#   全程没有一次逐像素操作，所以 Pillow 在这里没有用武之地。
 #
 # 不依赖 keyboard / pynput：全局热键用 ctypes 直接调 user32.RegisterHotKey。
 #   那两个库需要安装全局键盘钩子，容易被杀软误报，而且要常驻后台线程。
@@ -33,3 +105,38 @@ PySide6>=6.5
 #
 # 不依赖任何图标/托盘资源库：托盘图标是 QPainter 画出来的（ui/tray.py），
 #   不带二进制资源文件，PyInstaller 打包后不会丢图。
+#
+# 不用 patoolib / libarchive-c 之类「万能解压」封装：它们只是再套一层外部程序，
+#   但会连带支持十几种本项目根本不认的格式，探测逻辑也就不再是我们能逐条测试的
+#   那四步（见 core/rar.py::probe）。rarfile 只做 RAR，正好。
+#
+# 不用 unrar.dll / pyunrar 绑定：那要随程序转发 unrar 的二进制，许可问题比多装一个
+#   外部程序严重得多。
+#
+# --- 第二批的文本格式：FB2 / DOCX / HTML，零新依赖 ---
+#
+# FB2 用标准库 xml.etree.ElementTree 解析。刻意把**字节**直接喂给
+#   ET.fromstring，让它自己读文件头上的 <?xml encoding="windows-1251"?>
+#   声明——先猜一遍编码会把俄文书变成问号（core/fb2.py::parse_fb2）。
+#
+# DOCX 用标准库 zipfile + xml.etree，只读 word/document.xml，不碰
+#   word/styles.xml：判断「这一行是不是标题」要解析 w:pStyle 到
+#   styles.xml 的 basedOn 继承链，几百行代码换一个「也许更准」的目录，
+#   而 DOCX 的定位是「能读」。段落边界是刻意粗糙的（每 40 段一节）。
+#
+# HTML 复用 EPUB 那条路已经写好的 HTMLParser 抽取器（core/epub.py::
+#   _TextExtractor），自己只负责两件事 EPUB 不用管的：编码（HTML 常常只有
+#   <meta charset=gbk>，没有 XML 声明可依赖）和章节边界（HTML 没有 spine，
+#   整份抽成纯文本后跑 chapters.split_chapters_auto()，和 TXT 一样）。
+#
+# CB7 与 CBR/RAR 同一条路：检测系统里的 7z.exe 或 7za.exe，自己拼命令行，
+#   不引 py7zr。理由除了体积，还有一条是 RAR 那条路已经写好并逐条测过，
+#   复用它比再引一个 LZMA 绑定少一处出错的可能。一个 7z.exe 同时服务
+#   CBR/RAR 与 CB7，所以设置里沿用同一组 unrar_path / unrar_kind 字段
+#   （kind 为 "7z"），core/cb7.py::remember() 因此只接受 kind == "7z"。
+#
+# 四个格式都不进必装清单：FB2/DOCX/HTML 全靠标准库，装上就能用；CB7 只有在
+#   机器上有 7-Zip 时才能解压，缺了会看到「打开 CB7 需要 7-Zip」这句提示。
+#
+# 不做 .doc（Word 97-2003 二进制）：那是 OLE 复合文档，解析器又长又难测，
+#   而今天遇到的 .doc 基本都是 Word 另存过 .docx 的。扩展名表里没有它。

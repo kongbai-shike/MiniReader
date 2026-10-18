@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FictionBook xmlns="http://www.gribuser.ru/xml/fictionbook/2.0">
+  <description>
+    <title-info>
+      <book-title>测试书</book-title>
+      <author><first-name>列夫</first-name><middle-name>尼古拉耶维奇</middle-name>
+        <last-name>托尔斯泰</last-name></author>
+    </title-info>
+  </description>
+  <body>
+    <title><p>正文</p></title>
+    <section><title><p>第一章</p></title><p>正文一。</p></section>
+    <section><title><p>第二章</p></title><p>正文二。</p>
+      <section><title><p>节一</p></title><p>嵌套正文。</p></section>
+    </section>
+  </body>
+  <body name="notes">
+    <section><p>这是一整页译者注，不该被当正文读。</p></section>
+  </body>
+</FictionBook>

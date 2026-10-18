@@ -26,6 +26,7 @@ from minireader.qt import (
     QPoint,
 )
 from minireader.ui.settings_dialog import SettingsDialog
+from minireader.ui.theme import ACTIVE_EXTRAS
 from minireader.ui.window import (
     LEAVE_HIDE_DELAY_MS,
     READER_MENU_MIN_W,
@@ -60,8 +61,29 @@ class TestReaderMenuStructure(WindowTestCase):
         kinds = [(a.text(), a.isSeparator()) for a in actions]
         self.assertEqual(
             kinds,
-            [("上一页", False), ("下一页", False), ("", True), ("重新加载本页", False)],
+            [
+                ("上一页", False),
+                ("下一页", False),
+                ("", True),
+                ("重新加载本页", False),
+                ("", True),
+                ("按文本打开", False),
+                ("按漫画打开", False),
+            ],
         )
+
+    def test_the_pdf_items_stay_hidden_for_a_text_book(self) -> None:
+        """阶段 3 的两项只在 PDF 上有意义，别的格式上连位置都不该占。
+
+        隐藏而不是从菜单里删掉：动作只建一次（见 `_build_reader_menu`），
+        每次弹出重建菜单会让 `aboutToShow` 里刷新的启用态失去落点。
+        """
+        self.window._on_reader_menu_about_to_show()
+        self.assertFalse(self.window.pdf_text_action.isVisible())
+        self.assertFalse(self.window.pdf_comic_action.isVisible())
+        self.assertFalse(self.window.pdf_separator.isVisible())
+        # 隐藏的项仍然算进 sizeHint 的话菜单会凭空高一截，所以构造期就压住了。
+        self.assertLessEqual(self.menu.sizeHint().height(), 168)
 
     def test_items_are_plain_text_no_icon_no_shortcut(self) -> None:
         for action in self.menu.actions():
@@ -72,17 +94,23 @@ class TestReaderMenuStructure(WindowTestCase):
 
     def test_qss_matches_the_qq_measurements(self) -> None:
         qss = self.menu.styleSheet()
-        self.assertIn("#2b2b2b", qss, "菜单底色")
-        self.assertIn("#bdbdc0", qss, "菜单文字色")
+        # 颜色改成从活动主题取值拼串：阶段 3 的实测规格（底 #2b2b2b、字 #bdbdc0、
+        # 边框/悬停/分隔线都是 #3a3a3a）现在是深色主题那一档的值，白昼主题下它们
+        # 必须整体换成另一套，所以不能再钉死字面量。
+        x = ACTIVE_EXTRAS
+        self.assertIn(x["menu_bg"], qss, "菜单底色")
+        self.assertIn(x["menu_fg"], qss, "菜单文字色")
         self.assertIn("min-height: 40px", qss, "项高 40px")
         self.assertIn("font-size: 13px", qss, "菜单文字 ≥13px")
         # 圆角 6-8px：菜单项 6、菜单外框 8。
         self.assertIn("border-radius: 8px", qss)
         self.assertIn("border-radius: 6px", qss)
-        # #3a3a3a 同时是分隔线色和悬停高亮色。
+        # 同一个颜色同时是分隔线色和悬停高亮色。
         self.assertIn("QMenu::separator", qss)
-        self.assertIn("QMenu::item:selected { background: #3a3a3a", qss)
-        self.assertEqual(qss.count("#3a3a3a"), 3, "边框/悬停/分隔线三处")
+        self.assertIn(f"QMenu::item:selected {{ background: {x['menu_hover']}", qss)
+        self.assertEqual(
+            qss.count(x["menu_hover"]), 3, "边框/悬停/分隔线三处"
+        )
 
     def test_menu_geometry_is_about_135_by_148(self) -> None:
         # 样式表作用在菜单上之后量 sizeHint，量的是 Qt 实际算出来的尺寸。

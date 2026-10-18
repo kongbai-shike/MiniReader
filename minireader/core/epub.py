@@ -39,7 +39,17 @@ from dataclasses import dataclass, field
 from html.parser import HTMLParser
 from pathlib import Path
 
-__all__ = ["EpubContent", "EpubError", "Segment", "looks_like_epub", "parse_epub"]
+__all__ = [
+    "EpubContent",
+    "EpubError",
+    "FixedContent",
+    "FixedPage",
+    "Segment",
+    "epub_layout",
+    "looks_like_epub",
+    "parse_epub",
+    "parse_fixed",
+]
 
 CONTAINER_PATH = "META-INF/container.xml"
 ENCRYPTION_PATH = "META-INF/encryption.xml"
@@ -47,6 +57,28 @@ EPUB_MIMETYPE = b"application/epub+zip"
 
 # 用户看到的原文。测试逐字断言，改这句话等于改产品的提示语。
 DRM_MESSAGE = "这本 EPUB 有 DRM 加密，暂时打不开"
+
+# `rendition:layout` 的两个取值。固定版式（pre-paginated）是"每个书脊项就是
+# 一整页"，里面只有图片；流式（reflowable）才是能抽文字的普通书。
+LAYOUT_REFLOWABLE = "reflowable"
+LAYOUT_PRE_PAGINATED = "pre-paginated"
+
+# `rendition:spread` 的合法取值。别的值一律回落 auto——这不是我们猜，是规范说
+# 未识别的值按 auto 处理。
+SPREAD_VALUES = ("auto", "none", "landscape", "both")
+
+# 读 EPUB 时能被翻译成"这本 EPUB 读不了：..."的内部异常。集中成一处，让
+# `parse_epub` 和 `parse_fixed` 用同一张清单，避免两条路各漏一个。
+_READ_ERRORS = (
+    zipfile.BadZipFile,
+    KeyError,
+    ET.ParseError,
+    UnicodeDecodeError,
+    OSError,
+    RuntimeError,
+    ValueError,
+    IndexError,
+)
 
 # 连续空行的上限。正文里的空行是有意义的（分段），但畸形 XHTML 动不动吐出几十个
 # 换行，全留着会让阅读器里出现翻不到头的空白页。
@@ -109,6 +141,47 @@ class EpubContent:
     author: str
     segments: list[Segment]
     notes: list[str] = field(default_factory=list)  # 给用户看的提示，例如 "已忽略 12 张图片"
+    # 下面三个字段是阶段 7 加的，全部带默认值，所以阶段 6 之前的调用方
+    # 一个字都不用改，行为也一个字都不变（流式、从左往右、双页策略自动）。
+    layout: str = LAYOUT_REFLOWABLE       # "reflowable" | "pre-paginated"
+    progression: str = "ltr"              # "ltr" | "rtl"
+    spread: str = "auto"                  # "auto" | "none" | "landscape" | "both"
+
+
+@dataclass(frozen=True)
+class FixedPage:
+    """固定版式 EPUB 的一页。
+
+    `images` 是这一页要按顺序显示的所有图片（zip 内绝对路径）。绝大多数页
+    只有一张；拼版页会有多张，阅读器把它们纵向接起来当成一页。
+    """
+
+    name: str                    # 显示名，取自书脊项文件名
+    images: tuple[str, ...]      # zip 内绝对路径，按文档里出现的顺序
+
+    @property
+    def ref(self) -> str:
+        """单图页的那张图；多图页返回第一张（给"这一页代表什么"用）。"""
+        return self.images[0] if self.images else ""
+
+
+@dataclass
+class FixedContent:
+    """固定版式 EPUB 的解析结果。
+
+    和 `EpubContent` 分开而不是塞进同一个类，因为两者没有共同字段可复用：
+    一个是"章节 + 正文"，一个是"页 + 图片"，硬合并只会让两边都得写
+    `if layout == ...` 才能取值。
+    """
+
+    title: str
+    author: str
+    pages: list[FixedPage]
+    notes: list[str] = field(default_factory=list)
+    #: "ltr" | "rtl" | "" —— 空串表示"书里没写"，不是"从左往右"。差别很重要：
+    #: 写了就盖过用户的装订方向设置，没写就让用户的设置生效。
+    progression: str = ""
+    spread: str = "auto"                  # "auto" | "none" | "landscape" | "both"
 
 
 # ---------------------------------------------------------------------------
@@ -375,6 +448,55 @@ def _extract(data: bytes) -> _TextExtractor:
     return extractor
 
 
+class _ImageRefParser(HTMLParser):
+    """从固定版式的一页里取出图片引用，保持文档顺序。
+
+    三种写法都要认，因为不同工具链出的书不一样：
+      * `<img src="...">`             —— 普通 XHTML
+      * `<image xlink:href="..."/>`   —— SVG 里的（EPUB3 固定版式最常见）
+      * `<image href="..."/>`         —— SVG2 的简写，新版 InDesign 会这么写
+
+    用 HTMLParser 而不是 ElementTree 的理由和正文抽取一样：真实书里的
+    XHTML 未必是良构 XML，而"一页图片少读一张"比"整本书打不开"轻得多。
+    """
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.refs: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs) -> None:
+        tag = tag.lower()
+        if tag not in _IMAGE_TAGS:
+            return
+        values = dict(attrs)
+        # 属性名在不同命名空间下会带上前缀，逐个试而不是只看一个键。
+        for key in ("src", "xlink:href", "href"):
+            value = (values.get(key) or "").strip()
+            if value:
+                self.refs.append(value)
+                return
+
+    # 自闭合标签走 startendtag，不是 starttag，所以必须也实现一遍，
+    # 否则 `<image href="..."/>` 会被整个漏掉。
+    def handle_startendtag(self, tag: str, attrs) -> None:
+        self.handle_starttag(tag, attrs)
+
+
+def _extract_images(data: bytes) -> list[str]:
+    """一页里的图片 href，保持出现顺序；解析失败返回已取到的部分。
+
+    和 `_extract()` 同样刻意吞异常：畸形字符引用会让 feed() 抛，但已经收集到的
+    引用仍然有效。
+    """
+    parser = _ImageRefParser()
+    try:
+        parser.feed(_decode_xhtml(data))
+        parser.close()
+    except Exception:  # noqa: BLE001 - 同上，一页的容错不该毁掉整本书
+        pass
+    return parser.refs
+
+
 # ---------------------------------------------------------------------------
 # 目录：EPUB3 nav / EPUB2 ncx
 # ---------------------------------------------------------------------------
@@ -518,6 +640,86 @@ def _read_metadata(package: ET.Element) -> tuple[str, str]:
         elif name == "creator" and not author:
             author = _squash("".join(element.itertext()))
     return title, author
+
+
+def _meta_value(element: ET.Element) -> str:
+    """一个 `<meta>` 的取值。
+
+    EPUB3 的写法是 `<meta property="rendition:layout">pre-paginated</meta>`，
+    值在元素文字里；EPUB2 时代的旧约定是
+    `<meta name="fixed-layout" content="true"/>`，值在 content 属性里。两种都
+    得认，因为固定版式的书里两种都能遇到（Apple 和 Kobo 出的老书是后者）。
+    """
+    text = _squash("".join(element.itertext()))
+    return text or _squash(element.get("content") or "")
+
+
+def _read_rendition(package: ET.Element) -> tuple[str, str, str]:
+    """从 OPF 的 metadata 里读出 (layout, progression, spread)。
+
+    `_strip_ns()` 只改 element.tag 不动属性，所以 property/name/content 在这里
+    都是原样可读的，不需要再处理命名空间前缀。
+
+    判定规则按"谁更具体谁优先"排：
+      * layout：`rendition:layout` 是标准写法，先看它；没有再看旧约定
+        `fixed-layout` / `book-type=comic`。两者都没有就是流式——这是 EPUB 的
+        默认值，不是我们的猜测。
+      * progression：只认书脊上的 `page-progression-direction`。它在 spine 上
+        而不是 metadata 里，所以得单独取一次。
+      * spread：只认 `rendition:spread`，且只接受规范里的四个值。别的值按规范
+        回落 auto，不当作错误。
+    """
+    layout = ""
+    spread = "auto"
+    for element in package.iter():
+        if _local(element.tag) != "meta":
+            continue
+        prop = _squash(element.get("property") or "")
+        name = _squash(element.get("name") or "").lower()
+        value = _meta_value(element)
+
+        if prop == "rendition:layout":
+            lowered = value.lower()
+            if lowered in (LAYOUT_PRE_PAGINATED, LAYOUT_REFLOWABLE):
+                # 标准写法优先，但同一份 OPF 里可能出现多次；第一次有效值赢，
+                # 后面的不覆盖它（真实书里重复声明的值是一样的）。
+                layout = layout or lowered
+        elif name == "fixed-layout":
+            if value.lower() in ("true", "yes", "1"):
+                layout = layout or LAYOUT_PRE_PAGINATED
+        elif name == "book-type":
+            if value.lower() == "comic":
+                layout = layout or LAYOUT_PRE_PAGINATED
+        elif prop == "rendition:spread":
+            lowered = value.lower()
+            if lowered in SPREAD_VALUES:
+                spread = lowered
+
+    progression = "ltr"
+    spine_el = _first_local(package, "spine")
+    if spine_el is not None:
+        direction = _squash(spine_el.get("page-progression-direction") or "").lower()
+        if direction == "rtl":
+            progression = "rtl"
+
+    return (layout or LAYOUT_REFLOWABLE), progression, spread
+
+
+def _read_progression_declared(package: ET.Element) -> bool:
+    """书脊上到底有没有写 `page-progression-direction`。
+
+    `_read_rendition()` 按规范把"没写"回答成 ltr，这对"这本书该怎么翻"是对的；
+    但对阅读器来说，"书说从左往右"和"书什么都没说"必须分开：前者是书的主张，
+    该盖过用户的设置；后者应当让用户的设置生效。把两者混成一个 ltr，会让每一本
+    没写方向的日漫 EPUB 都把用户的右綴じ设置悄悄改掉。
+
+    所以这里单独回答"有没有写"，而不是把 `_read_rendition()` 的返回值改成空串
+    ——那会让它不再符合 EPUB 规范，也会让分派层的调用方看不懂。
+    """
+    spine_el = _first_local(package, "spine")
+    if spine_el is None:
+        return False
+    return bool(_squash(spine_el.get("page-progression-direction") or ""))
 
 
 def _read_manifest(package: ET.Element, opf_path: str) -> tuple[dict[str, tuple[str, str]], str]:
@@ -685,6 +887,33 @@ def looks_like_epub(path: str | os.PathLike[str]) -> bool:
         return False
 
 
+def epub_layout(path: str | os.PathLike[str]) -> tuple[str, str, str]:
+    """只看 OPF 的 metadata，回答 (layout, progression, spread)。
+
+    这是给分派层用的"便宜"判断：它只读 OPF 那一小段，不碰书脊、不解压正文，
+    所以对一本流式 EPUB 来说额外开销就是再读一次几 KB 的清单。
+
+    **绝不抛异常**：读不出来一律按流式回答。理由是这本书真正的错误应该由
+    `Book.from_path` / `parse_fixed` 用它们自己的中文文案报出来，而不是在这里
+    变成一句笼统的"判断失败"——同一个坏文件，两条路必须给出同一句错话。
+    """
+    try:
+        with _open_zip(Path(path)) as zf:
+            names = zf.namelist()
+            name_map: dict[str, str] = {}
+            for name in names:
+                name_map.setdefault(name.lower(), name)
+            if ENCRYPTION_PATH.lower() in name_map:
+                return LAYOUT_REFLOWABLE, "ltr", "auto"
+            opf_path, _notes = _find_opf(zf, names, name_map)
+            package_bytes = _read_member(zf, opf_path)
+            package = ET.fromstring(package_bytes)
+            _strip_ns(package)
+            return _read_rendition(package)
+    except Exception:  # noqa: BLE001 - 见 docstring：判不出来就当流式
+        return LAYOUT_REFLOWABLE, "ltr", "auto"
+
+
 def parse_epub(path: str | os.PathLike[str]) -> EpubContent:
     """把一个 EPUB 读成书。
 
@@ -695,20 +924,31 @@ def parse_epub(path: str | os.PathLike[str]) -> EpubContent:
         return _parse(Path(path))
     except EpubError:
         raise
-    except (
-        zipfile.BadZipFile,
-        KeyError,
-        ET.ParseError,
-        UnicodeDecodeError,
-        OSError,
-        RuntimeError,
-        ValueError,
-        IndexError,
-    ) as exc:
+    except _READ_ERRORS as exc:
         raise EpubError(f"这本 EPUB 读不了：{exc}") from exc
 
 
-def _parse(path: Path) -> EpubContent:
+def parse_fixed(path: str | os.PathLike[str]) -> FixedContent:
+    """把一本固定版式 EPUB 读成页序列。
+
+    和 `parse_epub` 的区别只在书脊之后怎么处理：那条路抽文字，这条路径取图片。
+    前面的检查（存在、是文件、是 zip、有 OPF、没 DRM）完全共用，所以两条路的
+    错误文案一个字都不会不一样。
+    """
+    try:
+        return _parse_fixed(Path(path))
+    except EpubError:
+        raise
+    except _READ_ERRORS as exc:
+        raise EpubError(f"这本 EPUB 读不了：{exc}") from exc
+
+
+def _open_zip(path: Path) -> zipfile.ZipFile:
+    """检查并打开一本 EPUB 的 zip，返回已经打开的文件对象（调用方负责关闭）。
+
+    抽出来是因为流式和固定版式两条路的"能不能打开"判断必须一模一样——两份
+    拷贝迟早会漂移，然后同一本书在两条路上给出不同的错误文案。
+    """
     try:
         exists = path.exists()
         is_file = path.is_file()
@@ -721,16 +961,44 @@ def _parse(path: Path) -> EpubContent:
     if not zipfile.is_zipfile(path):
         raise EpubError("这不是一个 EPUB 文件（不是有效的压缩包）")
     try:
-        zf = zipfile.ZipFile(path)
+        return zipfile.ZipFile(path)
     except zipfile.BadZipFile as exc:
         raise EpubError("这个 EPUB 压缩包已损坏或下载不完整") from exc
     except OSError as exc:
         raise EpubError(f"打不开这个文件：{exc.strerror or exc}") from exc
-    with zf:
+
+
+def _parse(path: Path) -> EpubContent:
+    with _open_zip(path) as zf:
         return _read_epub(zf)
 
 
-def _read_epub(zf: zipfile.ZipFile) -> EpubContent:
+def _parse_fixed(path: Path) -> FixedContent:
+    with _open_zip(path) as zf:
+        return _read_fixed(zf)
+
+
+@dataclass
+class _Package:
+    """打开一本 EPUB 之后、还没决定"按文字读还是按页读"之前的全部公共信息。
+
+    抽出来是因为两条路（流式抽正文 / 固定版式取图片）前面的步骤一模一样：
+    找 OPF、剥命名空间、读书名作者、读清单、读书脊。差别只在书脊之后怎么处理。
+    """
+
+    notes: list[str]
+    name_map: dict[str, str]
+    package: ET.Element
+    opf_path: str
+    title: str
+    author: str
+    manifest: dict[str, tuple[str, str]]
+    nav_path: str
+    spine: list[tuple[str, str]]
+
+
+def _open_package(zf: zipfile.ZipFile) -> _Package:
+    """把一本 EPUB 打开到"书脊已经拿到"为止。"""
     notes: list[str] = []
     names = zf.namelist()
     # zip 成员名区分大小写，但 href 里的大小写不一定跟它一致。建一份小写索引，
@@ -765,7 +1033,33 @@ def _read_epub(zf: zipfile.ZipFile) -> EpubContent:
     if not spine:
         raise EpubError("这本书的书脊是空的，找不到任何正文")
 
-    entries = _read_toc(zf, names, package, manifest, nav_path, notes, name_map)
+    return _Package(
+        notes=notes,
+        name_map=name_map,
+        package=package,
+        opf_path=opf_path,
+        title=title,
+        author=author,
+        manifest=manifest,
+        nav_path=nav_path,
+        spine=spine,
+    )
+
+
+def _read_epub(zf: zipfile.ZipFile) -> EpubContent:
+    opened = _open_package(zf)
+    notes = opened.notes
+    name_map = opened.name_map
+    package = opened.package
+    title = opened.title
+    author = opened.author
+    manifest = opened.manifest
+    nav_path = opened.nav_path
+    spine = opened.spine
+
+    layout, progression, spread = _read_rendition(package)
+
+    entries = _read_toc(zf, zf.namelist(), package, manifest, nav_path, notes, name_map)
     title_by_spine, toc_notes = _map_toc(entries, spine)
     notes.extend(toc_notes)
 
@@ -806,7 +1100,77 @@ def _read_epub(zf: zipfile.ZipFile) -> EpubContent:
     if not segments:
         raise EpubError("这本书里没有能读的正文（可能整本都是图片）")
 
-    return EpubContent(title=title, author=author, segments=segments, notes=notes)
+    return EpubContent(
+        title=title,
+        author=author,
+        segments=segments,
+        notes=notes,
+        layout=layout,
+        progression=progression,
+        spread=spread,
+    )
+
+
+def _read_fixed(zf: zipfile.ZipFile) -> FixedContent:
+    """固定版式 EPUB：每个书脊项就是一整页，页里只有图片。
+
+    不走 `_read_epub` 的正文抽取，因为那条路对这本书会得出"整本都是图片"然后
+    报错——它按"没有文字的一页就是空节"处理，而固定版式的每一页都没有文字。
+
+    一页里出现多张图片时全部按顺序收下（拼版页），由阅读器纵向接起来当成一页
+    显示；不在这里拼字节，因为 core 层不碰 Qt，解码是 UI 的事。
+    """
+    opened = _open_package(zf)
+    notes = opened.notes
+    name_map = opened.name_map
+    package = opened.package
+    manifest = opened.manifest
+    spine = opened.spine
+
+    _layout, progression, spread = _read_rendition(package)
+    # "书没写方向"和"书写了 ltr"是两件事，只有后者才是书的主张。
+    declared = _read_progression_declared(package)
+
+    pages: list[FixedPage] = []
+    missing_pages = 0
+    for doc_path, media_type in spine:
+        if not _is_text_media(media_type):
+            missing_pages += 1
+            continue
+        data = _read_soft(zf, name_map.get(doc_path.lower(), doc_path))
+        if data is None:
+            notes.append(f"压缩包里缺少文件：{doc_path}")
+            missing_pages += 1
+            continue
+        refs: list[str] = []
+        for href in _extract_images(data):
+            path, _fragment = _resolve(_dirname(doc_path), href)
+            if not path:
+                continue
+            # href 指向的成员可能大小写和 zip 里的不一致，按小写索引换成真名，
+            # 否则后面按 ref 读字节会找不到。
+            refs.append(name_map.get(path.lower(), path))
+        if not refs:
+            # 没有图片的一页在固定版式里没有意义（通常是空白的版权页），
+            # 收进来只会让用户翻到一片空白。
+            missing_pages += 1
+            continue
+        name = doc_path.rsplit("/", 1)[-1]
+        pages.append(FixedPage(name=name, images=tuple(refs)))
+
+    if not pages:
+        raise EpubError("这本固定版式 EPUB 里没有找到任何页面图片")
+    if missing_pages:
+        notes.append(f"已跳过 {missing_pages} 个没有图片的书脊项")
+
+    return FixedContent(
+        title=opened.title,
+        author=opened.author,
+        pages=pages,
+        notes=notes,
+        progression=progression if declared else "",
+        spread=spread,
+    )
 
 
 def _read_toc(

@@ -32,6 +32,7 @@ from minireader.qt import (
 )
 from minireader.storage import Settings, default_geometry
 from minireader.ui.settings_dialog import READ_PRESETS, SettingsDialog
+from minireader.ui.theme import ACTIVE_EXTRAS
 from minireader.ui.window import (
     PAGE_BTN_MIN_H,
     PAGE_BTN_MIN_W,
@@ -206,8 +207,11 @@ class TestStage2Chrome(WindowTestCase):
     def test_bottom_bar_readability_rules_in_the_qss(self) -> None:
         qss = _qss()
         self.assertIn("QToolButton#PrevPageButton, QToolButton#NextPageButton", qss)
-        self.assertIn("1px solid #6e6e6f", qss)
-        self.assertIn("#a3a3a3", qss)
+        # 胶囊的描边与文字色从活动主题取（深色 #6e6e6f/#a3a3a3，白昼 #bcbcc2/#5a5a61）：
+        # 钉死字面量就等于把白昼主题下的"白底白字"焊死在测试里。
+        x = ACTIVE_EXTRAS
+        self.assertIn(f"1px solid {x['capsule_border']}", qss)
+        self.assertIn(x["capsule_fg"], qss)
         self.assertIn("border-radius: 14px", qss)
         self.assertIn("font-size: 13px", qss, "翻页文字 ≥13px")
         # 目录/设置图标走 #StatusBar 通用钮：14px（≥13）、命中区 ≥28px。

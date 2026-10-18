@@ -25,11 +25,13 @@ from __future__ import annotations
 from dataclasses import replace
 
 from ..hotkeys import HotkeyError, format_hotkey, parse_hotkey, spec_from_qt
+from ..core import rar
 from ..qt import (
     QApplication,
     QCheckBox,
     QColor,
     QColorDialog,
+    QComboBox,
     QDialog,
     QDialogButtonBox,
     QFont,
@@ -41,6 +43,7 @@ from ..qt import (
     QLabel,
     QLineEdit,
     QMenu,
+    QPushButton,
     QScrollArea,
     QSizePolicy,
     QSlider,
@@ -51,9 +54,17 @@ from ..qt import (
     QWidget,
     QtWidgets,
     Signal,
+    available_screen_geometry,
 )
 from ..storage import HOTKEY_FIELDS, Settings, alpha_to_percent, percent_to_alpha
-from .theme import AA_NORMAL, PALETTE, contrast_ratio
+from .theme import (
+    AA_NORMAL,
+    ACTIVE_EXTRAS,
+    PALETTE,
+    THEME_LABELS,
+    THEME_NAMES,
+    contrast_ratio,
+)
 
 # 一键排版预设。名字是给读者看的，值必须都是 clamp() 允许范围内的合法值——预设本身
 # 就是个方便入口，不该绕过校验，所以 apply_to() 最后照样调 s.clamp()。
@@ -65,36 +76,69 @@ READ_PRESETS: tuple[tuple[str, dict], ...] = (
 )
 
 
-# 左侧导航条目；顺序必须与 _build() 里构建 4 个分组页的顺序一致（第 i 条 ↔ 第 i 页）。
+# 左侧导航条目；顺序必须与 _build() 里构建分组页的顺序一致（第 i 条 ↔ 第 i 页）。
 # 参考 Telegram Desktop 设置：左导航 + 右侧单页，一次只看一个分组。
 NAV_ITEMS: tuple[tuple[str, str], ...] = (
     ("正文排版", "字体、字号、行距、缩进、页边距与正文配色"),
+    ("漫画与 PDF", "PDF 判型、漫画默认缩放与模式、页缓存与预加载"),
     ("外观", "窗口与正文的不透明度，以及失去焦点时自动变淡"),
     ("窗口", "边缘吸附、移出隐身、托盘、置顶与任务栏按钮"),
     ("全局快捷键", "在任何程序里都能生效的组合键"),
 )
 
+# 漫画与 PDF 那一页的下拉选项：值必须与 storage.py 的枚举校验集合一致，
+# 否则用户选中的值会被 clamp() 悄悄打回默认。显示名是给读者看的中文。
+COMIC_MODE_CHOICES: tuple[tuple[str, str], ...] = (
+    ("single", "单页"),
+    ("scroll", "连续滚动"),
+    ("spread", "双页"),
+)
+COMIC_ZOOM_CHOICES: tuple[tuple[str, str], ...] = (
+    ("width", "宽度适应"),
+    ("height", "高度适应"),
+    ("original", "原始尺寸"),
+)
+PDF_KIND_CHOICES: tuple[tuple[str, str], ...] = (
+    ("auto", "自动判断"),
+    ("text", "按文本打开"),
+    ("comic", "按漫画打开"),
+)
+COMIC_BINDING_CHOICES: tuple[tuple[str, str], ...] = (
+    ("rtl", "右綴じ（从右往左）"),
+    ("ltr", "左綴じ（从左往右）"),
+)
+
 # 主按钮（确定）的橙：QQ 迷你窗的强调色。深色文字压橙色底的对比度约 7:1，白字只有
-# 3:1，所以主按钮用深字。
+# 3:1，所以主按钮用深字。**白昼主题沿用同一个橙**：橙底压深字的比值只跟这对颜色本身
+# 有关，跟窗口是深是浅无关，所以不必也不该为白昼再配一个橙（白底上再放浅橙会糊）。
 _PRIMARY = "#c8891a"
 _PRIMARY_HOVER = "#dda032"
 _PRIMARY_PRESSED = "#a96f12"
+# 橙底上的文字色。抽成常量而不是在 QSS 里写字面量：样式表源码里一个 6 位 hex 都不许
+# 出现（有测试钉这条），否则白昼下很容易漏改出"白底白字"。
+_PRIMARY_FG = "#1b1b1b"
 
 
 def _stylesheet() -> str:
     """对话框整体美化规格（对齐 QQ 迷你窗的深色层级）：
 
-    * 三层表面：对话框底 panel（#1b1b1b）< 分组框 card（#212121）< 控件 field（#2d2d2d）。
+    * 三层表面：对话框底 panel < 分组框 card < 控件 field（两套主题各自的 11 键表）。
     * 字号下限：说明小字 12px，标签/按钮/输入 13px，分组标题 14px 加粗——没有更小的字。
-    * 禁用态不靠透明度假装：滑块手柄/已勾选指示换成实色灰，文字用 #6f6f72，仍然可读。
+    * 禁用态不靠透明度假装：滑块手柄/已勾选指示换成实色灰，文字用当前主题的
+      disabled_fg，仍然可读。
+
+    **颜色一个字面量都不许写死**：除了 `_PRIMARY*` 这几个常量（它们与主题无关，且是被
+    插值进来的），其余全部来自 `PALETTE` 或 `ACTIVE_EXTRAS`。写死一个 hex 在白昼主题
+    下就是白底白字，而且只有真桌面才撞得见——`tests/test_theme.py` 用正则钉这条。
     """
     p = PALETTE
+    x = ACTIVE_EXTRAS
     return f"""
     QDialog {{ background: {p['panel']}; }}
     QLabel {{ color: {p['fg']}; font-size: 13px; }}
     QLabel#Muted {{ color: {p['muted']}; font-size: 12px; }}
     QLabel#Warn {{ color: {p['warn']}; font-size: 12px; }}
-    QLabel:disabled {{ color: #6f6f72; }}
+    QLabel:disabled {{ color: {x['disabled_fg']}; }}
     QGroupBox {{
         background: {p['card']}; color: {p['fg']};
         font-size: 14px; font-weight: bold;
@@ -107,12 +151,12 @@ def _stylesheet() -> str:
         border-radius: 4px; padding: 4px 8px; min-height: 28px; font-size: 13px;
         selection-background-color: {p['accent']};
     }}
-    QLineEdit:focus, QSpinBox:focus, QComboBox:focus {{ border: 1px solid #5a5a5a; }}
+    QLineEdit:focus, QSpinBox:focus, QComboBox:focus {{ border: 1px solid {x['focus_border']}; }}
     QLineEdit#HotkeyBad {{ border: 1px solid {p['warn']}; }}
     QSpinBox::up-button, QSpinBox::down-button {{
         background: {p['border']}; width: 18px; border: none;
     }}
-    QSpinBox::up-button:hover, QSpinBox::down-button:hover {{ background: #4a4a4a; }}
+    QSpinBox::up-button:hover, QSpinBox::down-button:hover {{ background: {x['handle_hover']}; }}
     QComboBox::drop-down {{ background: {p['border']}; width: 22px; border: none; }}
     QComboBox QAbstractItemView {{
         background: {p['field']}; color: {p['fg']}; border: 1px solid {p['border']};
@@ -123,10 +167,10 @@ def _stylesheet() -> str:
         width: 16px; height: 16px; background: {p['field']};
         border: 1px solid {p['border']}; border-radius: 3px;
     }}
-    QCheckBox::indicator:hover {{ border-color: #5a5a5a; }}
+    QCheckBox::indicator:hover {{ border-color: {x['focus_border']}; }}
     QCheckBox::indicator:checked {{ background: {_PRIMARY}; border-color: {_PRIMARY}; }}
-    QCheckBox::indicator:disabled {{ background: #262626; border-color: #333333; }}
-    QCheckBox:disabled {{ color: #6f6f72; }}
+    QCheckBox::indicator:disabled {{ background: {x['disabled_bg']}; border-color: {x['disabled_border']}; }}
+    QCheckBox:disabled {{ color: {x['disabled_fg']}; }}
     QSlider::groove:horizontal {{
         height: 4px; background: {p['border']}; border-radius: 2px;
     }}
@@ -134,32 +178,32 @@ def _stylesheet() -> str:
     QSlider::handle:horizontal {{
         background: {p['fg']}; width: 14px; margin: -5px 0; border-radius: 7px;
     }}
-    QSlider::handle:horizontal:hover {{ background: #ffffff; }}
-    QSlider::groove:horizontal:disabled {{ background: #2a2a2a; }}
-    QSlider::sub-page:horizontal:disabled {{ background: #3d4a63; }}
-    QSlider::handle:horizontal:disabled {{ background: #6a6a6a; }}
+    QSlider::handle:horizontal:hover {{ background: {x['slider_handle_hover']}; }}
+    QSlider::groove:horizontal:disabled {{ background: {x['slider_groove_disabled']}; }}
+    QSlider::sub-page:horizontal:disabled {{ background: {x['slider_subpage_disabled']}; }}
+    QSlider::handle:horizontal:disabled {{ background: {x['slider_handle_disabled']}; }}
     QToolButton {{
         background: {p['field']}; color: {p['fg']}; border: 1px solid {p['border']};
         border-radius: 4px; padding: 5px 12px; font-size: 13px; min-height: 28px;
     }}
     QToolButton:hover {{ background: {p['border']}; }}
-    QToolButton:pressed {{ background: #454545; }}
-    QToolButton:focus {{ border: 1px solid #5a5a5a; }}
+    QToolButton:pressed {{ background: {x['pressed_bg']}; }}
+    QToolButton:focus {{ border: 1px solid {x['focus_border']}; }}
     QPushButton {{
         background: {p['field']}; color: {p['fg']}; border: 1px solid {p['border']};
         border-radius: 4px; padding: 6px 16px; font-size: 13px;
         min-width: 80px; min-height: 32px;
     }}
     QPushButton:hover {{ background: {p['border']}; }}
-    QPushButton:pressed {{ background: #454545; }}
-    QPushButton:focus {{ border: 1px solid #5a5a5a; }}
-    QPushButton:disabled {{ background: #262626; color: #6f6f72; }}
+    QPushButton:pressed {{ background: {x['pressed_bg']}; }}
+    QPushButton:focus {{ border: 1px solid {x['focus_border']}; }}
+    QPushButton:disabled {{ background: {x['disabled_bg']}; color: {x['disabled_fg']}; }}
     QPushButton#PrimaryButton {{
-        background: {_PRIMARY}; color: #1b1b1b; border: none; font-weight: bold;
+        background: {_PRIMARY}; color: {_PRIMARY_FG}; border: none; font-weight: bold;
     }}
     QPushButton#PrimaryButton:hover {{ background: {_PRIMARY_HOVER}; }}
     QPushButton#PrimaryButton:pressed {{ background: {_PRIMARY_PRESSED}; }}
-    QPushButton#PrimaryButton:disabled {{ background: #6a5626; color: #3a3a3a; }}
+    QPushButton#PrimaryButton:disabled {{ background: {x['primary_disabled_bg']}; color: {x['primary_disabled_fg']}; }}
     QMenu {{
         background: {p['field']}; color: {p['fg']}; border: 1px solid {p['border']};
         padding: 4px;
@@ -171,7 +215,7 @@ def _stylesheet() -> str:
     QScrollBar::handle:vertical {{
         background: {p['border']}; border-radius: 4px; min-height: 24px;
     }}
-    QScrollBar::handle:vertical:hover {{ background: #4a4a4a; }}
+    QScrollBar::handle:vertical:hover {{ background: {x['handle_hover']}; }}
     QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
         height: 0; border: none; background: none;
     }}
@@ -296,6 +340,7 @@ class SettingsDialog(QDialog):
         on_background=None,
         on_content=None,
         on_leave_hide=None,
+        on_theme=None,
     ) -> None:
         super().__init__(parent)
         self.setWindowTitle("MiniReader 设置")
@@ -312,9 +357,17 @@ class SettingsDialog(QDialog):
         # "鼠标移出隐身"复选框一动就调它，把主窗顶栏 👁 的按下状态跟过去。这里只同步
         # 按钮外观，真正的设置仍然等按"确定"才由 apply_to() 写。
         self._on_leave_hide = on_leave_hide
+        # 主题下拉的实时预览。和顶栏 🌙 共用主窗的 apply_theme()，所以两处入口的副作用
+        # 完全一致；同样**不落盘**，取消时主窗会把主题切回去（见 MiniWindow.open_settings）。
+        # 名字刻意不叫 `_on_theme`——那是下面的槽方法名，同名会把回调覆盖掉。
+        self._on_theme_cb = on_theme
         # 只有用户**主动**挑过字体才把族名存进配置，否则 ""（跟随系统）会被 Qt 报告的
         # 具体族名永久顶掉。_build() 里设置初始字体时这个标志必须已经是假。
         self._font_touched = False
+        # 上一次"重新检测"的结果。None 表示这个对话框里还没按过——此时 apply_to()
+        # 不该动配置里的 unrar_* 三个字段，否则打开一次设置页就会把上次探测的结果
+        # 抹成空（用户可能只是来改字号的）。
+        self._rar_probe = None
         self._original_restart_flags = (
             bool(settings.always_on_top),
             bool(settings.hide_from_taskbar),
@@ -367,16 +420,9 @@ class SettingsDialog(QDialog):
             other.setMinimumHeight(0)
 
         available = None
-        screen = QApplication.desktop() if hasattr(QApplication, "desktop") else None
-        if screen is not None:
-            try:
-                available = screen.availableGeometry()
-            except Exception:
-                available = None
-        if available is None:
-            holder = self.screen() if hasattr(self, "screen") else None
-            if holder is not None:
-                available = holder.availableGeometry()
+        # `QApplication.desktop()` 在 Qt 6 里没有了（PySide6 直接 AttributeError），
+        # 取屏的三种写法收在 `available_screen_geometry()` 里，两个绑定都能用。
+        available = available_screen_geometry(self)
         if available is None:
             return
 
@@ -438,11 +484,12 @@ class SettingsDialog(QDialog):
         self._stack.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Ignored)
         self._pages: list[QWidget] = []
         self._page_areas: list[QScrollArea] = []
-        # The four _*_group() builders are reused verbatim - not rewritten. The only
-        # change is structural: instead of stacking all four groups into one scroll
-        # body, each group hangs on its own page. Order must match NAV_ITEMS exactly.
+        # The group builders are reused verbatim - not rewritten. The only change is
+        # structural: instead of stacking all of them into one scroll body, each group
+        # hangs on its own page. Order must match NAV_ITEMS exactly.
         groups = (
             self._typography_group(s),
+            self._comic_group(s),
             self._appearance_group(s),
             self._window_group(s),
             self._hotkeys_group(s),
@@ -555,6 +602,22 @@ class SettingsDialog(QDialog):
         form = QFormLayout(box)
         form.setLabelAlignment(Qt.AlignRight | Qt.AlignVCenter)
         form.setSpacing(8)
+
+        # 主题放这一页的第一行：它是"整窗长什么样"的总开关，比下面的透明度更上位。
+        # 它和「正文排版」页的正文配色是**两个**维度：主题只管窗口外观（顶栏/底栏/
+        # 目录/托盘/菜单/tooltip），正文底色字色归正文排版页，所以下面那行说明必须
+        # 写清楚，否则用户会以为切了主题正文也会跟着变色。
+        self.theme_combo = QComboBox()
+        for _name in THEME_NAMES:
+            self.theme_combo.addItem(THEME_LABELS.get(_name, _name), _name)
+        _select_data(self.theme_combo, s.theme)
+        self.theme_combo.currentIndexChanged.connect(self._on_theme)
+        self.theme_note = QLabel(
+            "只改窗口外观。正文的字体、字号与配色在「正文排版」页，两者互不影响。"
+        )
+        self.theme_note.setObjectName("Muted")
+        self.theme_note.setWordWrap(True)
+        form.addRow("主题", _row(self.theme_combo, self.theme_note))
 
         self.opacity_slider, self.opacity_value = _slider(30, 100, s.opacity, "%")
         self.opacity_slider.valueChanged.connect(self._on_opacity)
@@ -769,6 +832,156 @@ class SettingsDialog(QDialog):
         # 用户挑中的正好就是系统默认字体时，归一化成 ""，让配置里只有一种表示法。
         return "" if family == QFont().family() else family
 
+    def _comic_group(self, s: Settings) -> QGroupBox:
+        """漫画与 PDF 的那一页。
+
+        PDF 的判型和漫画的显示方式是同一件事的两半：两者都决定"这一页该怎么画"，
+        而且共用同一个页缓存预算。放在一起，用户调 PDF 的时候顺手就看得到漫画的档位。
+        """
+        box = QGroupBox("漫画与 PDF")
+        form = QFormLayout(box)
+        form.setLabelAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        form.setSpacing(8)
+
+        # PDF 判型。默认"自动判断"是按内容量出来的（见 core/pdfdoc.py）：
+        # 字符密度 >= 200 判文本，密度极低且图片盖住 70% 以上判扫描。
+        self.pdf_kind_combo = QComboBox()
+        for value, label in PDF_KIND_CHOICES:
+            self.pdf_kind_combo.addItem(label, value)
+        _select_data(self.pdf_kind_combo, getattr(s, "pdf_default_kind", "auto"))
+        form.addRow("PDF 默认按", self.pdf_kind_combo)
+
+        pdf_note = QLabel(
+            "自动判断：正文文字多的 PDF 当书读，整页扫描的当漫画翻。"
+            "判错了可以在正文右键菜单里改成另一种，那本书会记住。"
+        )
+        pdf_note.setObjectName("Muted")
+        pdf_note.setWordWrap(True)
+        form.addRow("", pdf_note)
+
+        self.comic_zoom_combo = QComboBox()
+        for value, label in COMIC_ZOOM_CHOICES:
+            self.comic_zoom_combo.addItem(label, value)
+        _select_data(self.comic_zoom_combo, getattr(s, "comic_default_zoom", "width"))
+        form.addRow("打开漫画时", self.comic_zoom_combo)
+
+        self.comic_mode_combo = QComboBox()
+        for value, label in COMIC_MODE_CHOICES:
+            self.comic_mode_combo.addItem(label, value)
+        _select_data(self.comic_mode_combo, getattr(s, "comic_default_mode", "single"))
+        form.addRow("阅读模式", self.comic_mode_combo)
+
+        mode_note = QLabel("双页模式要求窗口够宽；窗口太窄时会自动退回单页。")
+        mode_note.setObjectName("Muted")
+        mode_note.setWordWrap(True)
+        form.addRow("", mode_note)
+
+        # 缓存预算。按解码后的像素算（宽 × 高 × 4 字节），所以一张 1224×1584 的
+        # PDF 页约占 7.4 MB。上限 1024 与 storage.clamp() 的范围一致。
+        self.cache_slider, self.cache_value = _slider(
+            64, 1024, int(getattr(s, "comic_cache_mb", 256)), " MB"
+        )
+        self.cache_slider.setPageStep(64)
+        self.cache_slider.valueChanged.connect(self._on_cache_mb)
+        form.addRow("页缓存上限", _row(self.cache_slider, self.cache_value))
+
+        cache_note = QLabel(
+            "已经解码的页放在内存里，翻回上一页就不用重新解码。"
+            "调大更顺滑、更占内存；调小到 64 MB 时大约只能记住八张整页。"
+        )
+        cache_note.setObjectName("Muted")
+        cache_note.setWordWrap(True)
+        form.addRow("", cache_note)
+
+        self.preload_spin = QSpinBox()
+        self.preload_spin.setRange(0, 10)
+        self.preload_spin.setValue(int(getattr(s, "comic_preload", 3)))
+        self.preload_spin.setSuffix(" 页")
+        form.addRow("预读前后", self.preload_spin)
+
+        self.cover_alone_check = QCheckBox("双页模式下封面单独显示")
+        self.cover_alone_check.setChecked(bool(getattr(s, "comic_cover_alone", True)))
+        form.addRow("", self.cover_alone_check)
+
+        cover_note = QLabel(
+            "开启时：封面单独占一屏，之后才是两页一组。"
+            "若第 1 页文件名含 cover / 封面 / 000，或前三页都是竖版，"
+            "会自动按封面处理，不受这个开关影响。"
+        )
+        cover_note.setObjectName("Muted")
+        cover_note.setWordWrap(True)
+        form.addRow("", cover_note)
+
+        self.gutter_spin = QSpinBox()
+        self.gutter_spin.setRange(0, 32)
+        self.gutter_spin.setValue(int(getattr(s, "comic_gutter", 0)))
+        self.gutter_spin.setSuffix(" px")
+        form.addRow("双页间距", self.gutter_spin)
+
+        gutter_note = QLabel(
+            "两页之间的留白。默认 0——扫描的漫画本身带边距；"
+            "只有被裁到边缘的扫描件才需要加大。"
+        )
+        gutter_note.setObjectName("Muted")
+        gutter_note.setWordWrap(True)
+        form.addRow("", gutter_note)
+
+        self.binding_combo = QComboBox()
+        for value, label in COMIC_BINDING_CHOICES:
+            self.binding_combo.addItem(label, value)
+        _select_data(self.binding_combo, getattr(s, "comic_binding", "rtl"))
+        form.addRow("装订方向", self.binding_combo)
+
+        # CBR/RAR 需要一个外部解压程序（WinRAR 的 UnRAR.exe 或 7-Zip 的 7z.exe）。
+        # 它不是本项目的依赖，所以这一行显示"找到了什么"，而不是让用户手填路径——
+        # 猜路径是 rar.py 的事，用户只要能看到结果和重新检测就够了。
+        self.rar_status = QLabel()
+        self.rar_status.setObjectName("Muted")
+        self.rar_status.setWordWrap(True)
+        self.rar_recheck_button = QPushButton("重新检测")
+        self.rar_recheck_button.setObjectName("SmallButton")
+        self.rar_recheck_button.clicked.connect(self._on_recheck_rar)
+        form.addRow("CBR/RAR 解压", _row(self.rar_status, self.rar_recheck_button))
+        self._show_rar_status(getattr(s, "unrar_path", ""), getattr(s, "unrar_kind", ""))
+
+        rar_note = QLabel(
+            "CBR/RAR 要用 WinRAR 或 7-Zip 解压，本程序不附带这两个。"
+            "装了其中一个之后点「重新检测」，或者重开这本书。"
+        )
+        rar_note.setObjectName("Muted")
+        rar_note.setWordWrap(True)
+        form.addRow("", rar_note)
+
+        return box
+
+    def _show_rar_status(self, path: str, kind: str) -> None:
+        """One line describing the cached tool, or that there is none."""
+        if path:
+            name = {"unrar": "WinRAR", "7z": "7-Zip"}.get(kind, "解压程序")
+            self.rar_status.setText(f"已找到：{name}")
+            self.rar_status.setToolTip(path)
+        else:
+            self.rar_status.setText("没找到，打开 CBR/RAR 时会提示")
+            self.rar_status.setToolTip("")
+
+    def _on_recheck_rar(self) -> None:
+        """Probe now, without waiting for a save, and show what was found.
+
+        Deliberately writes nothing to `Settings`: the dialog's contract is that
+        `apply_to()` is the only writer, and a probe result that is thrown away by
+        "取消" would be a second, hidden source of truth. The button therefore only
+        updates the label; pressing 确定 is what persists it (via `apply_to`, which
+        re-reads the same module cache).
+        """
+        found = rar.find(force=True)
+        self._rar_probe = found
+        self._show_rar_status(found.path if found else "", found.kind if found else "")
+        if found is None:
+            self.rar_status.setText("还是没找到，确认装好之后再试一次")
+
+    def _on_cache_mb(self, value: int) -> None:
+        self.cache_value.setText(f"{int(value)} MB")
+
     def _window_group(self, s: Settings) -> QGroupBox:
         box = QGroupBox("窗口")
         form = QFormLayout(box)
@@ -879,6 +1092,29 @@ class SettingsDialog(QDialog):
         self.dim_value.setText(f"{self.dim_slider.value()}%")
         self._preview()
 
+    def _on_theme(self, _index: int) -> None:
+        """下拉里挑了主题：立刻预览（不落盘），落盘仍然等"确定"。
+
+        切主题只走主窗的 apply_theme()，和顶栏 🌙 是同一条通道——两处入口的副作用
+        因此完全一致（顶栏/底栏/正文选中色/目录高亮条/右键菜单/tooltip 都跟着变）。
+        """
+        name = _combo_data(self.theme_combo)
+        if self._on_theme_cb is not None:
+            self._on_theme_cb(name)
+
+    def sync_theme(self, name: str) -> None:
+        """把当前主题回灌到下拉（顶栏 🌙 改了主题时由主窗调用）。
+
+        只动控件、**不**触发预览回调：主题已经是那个了，再切一次是白跑一趟，而且会让
+        "取消"的回滚逻辑看到一次无意义的状态变化。
+        """
+        combo = getattr(self, "theme_combo", None)
+        if combo is None:
+            return
+        was = combo.blockSignals(True)
+        _select_data(combo, name)
+        combo.blockSignals(was)
+
     def _on_bg_alpha(self) -> None:
         """拖动"背景透明度"：只改窗口底色，不触发整窗重排/存盘。"""
         percent = int(self.bg_alpha_slider.value())
@@ -967,6 +1203,9 @@ class SettingsDialog(QDialog):
         s.content_alpha = percent_to_alpha(self.content_slider.value())
         # 复选框是"兼容模式"，和字段语义相反：勾上 = 关半透明。
         s.translucent_bg = not bool(self.compat_check.isChecked())
+        # 主题也是"窗口外观"这一族的：从下拉取值（只可能落在 THEME_NAMES 内），
+        # clamp() 那边照样兜底校验一次。
+        s.theme = _combo_data(self.theme_combo)
         s.opacity = int(self.opacity_slider.value())
         s.dim_on_blur = bool(self.dim_check.isChecked())
         s.dim_opacity = int(self.dim_slider.value())
@@ -980,6 +1219,23 @@ class SettingsDialog(QDialog):
         s.hide_from_taskbar = bool(self.taskbar_check.isChecked())
         for name, _field, _label in HOTKEY_FIELDS:
             setattr(s, name, self.hotkey_edits[name].spec())
+        # 漫画与 PDF。四个枚举都从下拉框里取值，取值只可能落在合法集合内——
+        # clamp() 那边的校验因此是兜底而不是主路径。
+        s.pdf_default_kind = _combo_data(self.pdf_kind_combo)
+        s.comic_default_zoom = _combo_data(self.comic_zoom_combo)
+        s.comic_default_mode = _combo_data(self.comic_mode_combo)
+        s.comic_binding = _combo_data(self.binding_combo)
+        s.comic_cache_mb = int(self.cache_slider.value())
+        s.comic_preload = int(self.preload_spin.value())
+        s.comic_cover_alone = bool(self.cover_alone_check.isChecked())
+        s.comic_gutter = int(self.gutter_spin.value())
+        # CBR/RAR 的解压程序缓存。只有在这个对话框里按过"重新检测"才写：没按过时
+        # `_rar_probe` 是 None，此时保留磁盘上原来的答案，免得用户只是来改字号、
+        # 点一下确定，就把上次探测的结果抹掉。
+        if self._rar_probe is not None:
+            s.unrar_path = self._rar_probe.path if self._rar_probe else ""
+            s.unrar_kind = self._rar_probe.kind if self._rar_probe else ""
+            s.unrar_checked = True
         s.clamp()
         return s
 
@@ -1007,6 +1263,11 @@ class SettingsDialog(QDialog):
         self.content_slider.setValue(alpha_to_percent(fresh.content_alpha))
         self.compat_check.setChecked(not fresh.translucent_bg)
         self._sync_content_enabled()
+        # 主题也回到出厂值。这里**不**触发预览回调：和"恢复默认"的其它控件一样，界面
+        # 要等按下"确定"才真变（主窗 apply_preferences 会带过去）。所以走 sync_theme()
+        # ——它 blockSignals 之后再改下拉；直接 _select_data 会甩出一次
+        # currentIndexChanged，把"恢复默认"变成一次立即预览。
+        self.sync_theme(fresh.theme)
         self.opacity_slider.setValue(fresh.opacity)
         self.dim_check.setChecked(fresh.dim_on_blur)
         self.dim_slider.setValue(fresh.dim_opacity)
@@ -1021,6 +1282,20 @@ class SettingsDialog(QDialog):
         for name, _field, _label in HOTKEY_FIELDS:
             self.hotkey_edits[name].set_spec(getattr(fresh, name))
         self._on_hotkeys_changed()
+        _select_data(self.pdf_kind_combo, fresh.pdf_default_kind)
+        _select_data(self.comic_zoom_combo, fresh.comic_default_zoom)
+        _select_data(self.comic_mode_combo, fresh.comic_default_mode)
+        _select_data(self.binding_combo, fresh.comic_binding)
+        self.cache_slider.setValue(fresh.comic_cache_mb)
+        self.preload_spin.setValue(fresh.comic_preload)
+        self.cover_alone_check.setChecked(fresh.comic_cover_alone)
+        self.gutter_spin.setValue(fresh.comic_gutter)
+        # 解压程序不是偏好而是这台机器的事实：恢复默认不假装它没装过。标签回到
+        # 磁盘上那个答案，`_rar_probe` 清空，于是确定时不会写 unrar_* 三个字段。
+        self._rar_probe = None
+        self._show_rar_status(
+            getattr(self._settings, "unrar_path", ""), getattr(self._settings, "unrar_kind", "")
+        )
         self._sync_dim_enabled()
         self._on_restart_flag_toggled()
         self._on_opacity()
@@ -1035,6 +1310,23 @@ def _slider(low: int, high: int, value: int, suffix: str):
     label.setMinimumWidth(38)
     label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
     return slider, label
+
+
+def _select_data(combo, value: str) -> None:
+    """Point a combo at the row whose data is `value`.
+
+    Falls back to row 0 rather than leaving the combo unselected: an unknown value
+    in a hand-edited settings.json would otherwise show a blank dropdown, and
+    `apply_to()` reads the combo back - so a blank would silently become whatever
+    the first row is anyway. Doing it here at least shows the user that answer.
+    """
+    index = combo.findData(value)
+    combo.setCurrentIndex(index if index >= 0 else 0)
+
+
+def _combo_data(combo) -> str:
+    data = combo.currentData()
+    return str(data) if data is not None else ""
 
 
 def _row(*widgets) -> QWidget:

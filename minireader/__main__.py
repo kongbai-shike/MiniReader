@@ -232,6 +232,24 @@ def main(argv: list[str] | None = None, *, app=None, on_ready=None) -> int:
     progress = ProgressStore.load()
     library = Library.load()
 
+    # 主题必须在**任何窗口存在之前**装进活动调色板：窗口、托盘图标、目录面板、
+    # 占位页、设置对话框的样式表都在构造时读 PALETTE 取值，晚一步就会先画一帧深色
+    # 再跳成浅色。这里也只做这一件事——不改 windowFlags、不碰 setPalette。
+    from .ui import theme as _theme
+
+    _theme.apply_theme(settings.theme)
+
+    # Hand the cached CBR/RAR extractor to the module that needs it, before any
+    # window exists. `rar.remember()` re-stats the path and falls back to a real
+    # probe when it is gone, so a settings.json copied from another machine (or a
+    # 7-Zip uninstalled since last run) costs one probe rather than a wrong answer.
+    # Doing it here rather than lazily means the settings dialog's label is honest
+    # on the first paint.
+    from .core import rar as _rar
+
+    if not _rar.remember(settings.unrar_path, settings.unrar_kind):
+        _rar.find()
+
     def on_hotkey(name: str) -> None:
         """One dispatcher for every global chord.
 

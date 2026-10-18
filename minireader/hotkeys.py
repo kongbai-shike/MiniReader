@@ -174,17 +174,19 @@ else:  # pragma: no cover - the app targets Windows
 
 
 def _query_mods() -> tuple[int, int, int, int]:
-    """(ctrl, alt, shift, meta) as the binding spells them.
+    """(ctrl, alt, shift, meta) as plain ints.
 
-    Qt 5 keeps these flat on `Qt`; Qt 6 nests them under `Qt.KeyboardModifier`.
+    Qt 5 keeps these flat on `Qt`; Qt 6 nests them under `Qt.KeyboardModifier`,
+    where they are no longer int subclasses - `int(Qt.ControlModifier)` raises
+    TypeError on PySide6 6.12. `enum_value()` reads whichever form is present.
     """
-    from .qt import Qt
+    from .qt import Qt, enum_value
 
     def pick(*names):
         for name in names:
             value = getattr(Qt, name, None)
             if value is not None:
-                return int(value)
+                return enum_value(value)
         return 0
 
     return (
@@ -238,8 +240,14 @@ def spec_from_qt(key: int, modifiers: int) -> str | None:
     validated: a spec with no modifier is still returned, so the settings dialog can
     show the user what they pressed and explain why it is rejected, instead of silently
     swallowing the keystroke.
+
+    `modifiers` is a `Qt.KeyboardModifier`, and on PySide6 6.12 that is no longer an
+    int subclass - `int(Qt.NoModifier)` raises TypeError. `enum_value()` handles both
+    bindings (and a plain int, which the tests pass).
     """
-    mods = int(modifiers or 0)
+    from .qt import enum_value
+
+    mods = enum_value(modifiers)
     ctrl, alt, shift, meta = _query_mods()
     parts: list[str] = []
     if mods & ctrl:

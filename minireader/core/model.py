@@ -15,8 +15,10 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from .book_base import BookBase
 from .chapters import Chapter, SplitResult, split_chapters_auto
 from .encoding import DecodeError, Decoded, decode_txt
+from .formats import DOCX_EXTS, FB2_EXTS, HTML_EXTS
 
 # A 200 MB "novel" is a mis-click, and reading it into one str would cost ~400 MB.
 MAX_BYTES = 200 * 1024 * 1024
@@ -73,8 +75,25 @@ def _is_epub(p: Path) -> bool:
     return looks_like_epub(p)
 
 
+def _is_pdf(p: Path) -> bool:
+    """Is this path a PDF?
+
+    Same reasoning as `_is_epub`: the extension decides the fast yes, and the
+    magic decides whether a file with the wrong name is worth asking about. A PDF
+    is the one format whose *reader* cannot be decided here - that is
+    `pdfdoc.classify()`, and it has to open the document to answer.
+    """
+    if p.suffix.lower() == ".pdf":
+        return True
+    try:
+        with open(p, "rb") as fh:
+            return fh.read(5) == b"%PDF-"
+    except OSError:
+        return False
+
+
 @dataclass
-class Book:
+class Book(BookBase):
     id: str
     title: str
     path: str
@@ -160,6 +179,15 @@ class Book:
             raise BookError(f"文件太大（{human_size(stat.st_size)}），超过 {human_size(MAX_BYTES)} 上限")
         if _is_epub(p):
             return cls._from_epub(p, stat)
+        if _is_pdf(p):
+            return cls._from_pdf(p, stat)
+        suffix = p.suffix.lower()
+        if suffix in FB2_EXTS:
+            return cls._from_fb2(p, stat)
+        if suffix in DOCX_EXTS:
+            return cls._from_docx(p, stat)
+        if suffix in HTML_EXTS:
+            return cls._from_html(p, stat)
         try:
             data = p.read_bytes()
         except OSError as exc:
@@ -189,6 +217,116 @@ class Book:
         )
 
     @classmethod
+    def _from_fb2(cls, p: Path, stat: os.stat_result) -> "Book":
+        """Open an FB2 through its `<section>` tree, never through the TXT regex."""
+        from .fb2 import Fb2Error, parse_fb2
+
+        try:
+            content = parse_fb2(p)
+        except Fb2Error as exc:
+            raise BookError(str(exc)) from exc
+        return cls.from_segments(
+            content.segments,
+            path=str(p),
+            title=content.title,
+            author=content.author,
+            notes=content.notes,
+            size=stat.st_size,
+            mtime=stat.st_mtime,
+            encoding="fb2",
+            encoding_label="FB2",
+            source="fb2",
+            empty_message="这本 FB2 里没有可读的正文",
+        )
+
+    @classmethod
+    def _from_docx(cls, p: Path, stat: os.stat_result) -> "Book":
+        """Open a DOCX through its paragraphs, never through the TXT regex."""
+        from .docx import DocxError, parse_docx
+
+        try:
+            content = parse_docx(p)
+        except DocxError as exc:
+            raise BookError(str(exc)) from exc
+        return cls.from_segments(
+            content.segments,
+            path=str(p),
+            title=content.title,
+            author=content.author,
+            notes=content.notes,
+            size=stat.st_size,
+            mtime=stat.st_mtime,
+            encoding="docx",
+            encoding_label="DOCX",
+            source="docx",
+            empty_message="这个 DOCX 里没有可读的正文",
+        )
+
+    @classmethod
+    def _from_html(cls, p: Path, stat: os.stat_result) -> "Book":
+        """Open an HTML page: extract the text, then split it like a TXT."""
+        from .htmldoc import HtmlError, parse_html
+
+        try:
+            content = parse_html(p)
+        except HtmlError as exc:
+            raise BookError(str(exc)) from exc
+        return cls.from_segments(
+            content.segments,
+            path=str(p),
+            title=content.title,
+            author=content.author,
+            notes=content.notes,
+            size=stat.st_size,
+            mtime=stat.st_mtime,
+            encoding="html",
+            encoding_label="HTML",
+            source="html",
+            empty_message="这个网页里没有可读的正文",
+        )
+
+    @classmethod
+    def from_pdf(cls, path) -> "Book":
+        """Open a PDF as text. Public because `opener` decides the kind, then asks.
+
+        `from_path()` reaches the same code for a `.pdf`, but only after sniffing
+        the magic; this is the direct door for a caller that has already decided
+        (the user chose "按文本打开", or `pdfdoc.classify()` said text).
+        """
+        p = Path(path)
+        try:
+            stat = p.stat()
+        except OSError as exc:
+            raise BookError(f"读不到这个文件：{exc.strerror or exc}") from exc
+        if not p.is_file():
+            raise BookError("这不是一个文件")
+        if stat.st_size == 0:
+            raise BookError("文件是空的")
+        return cls._from_pdf(p, stat)
+
+    @classmethod
+    def _from_pdf(cls, p: Path, stat: os.stat_result) -> "Book":
+        """Open a text PDF, one page per chapter.
+
+        `pdfdoc` is imported inside the function for the same reason `epub` is:
+        pypdfium2 is optional, and a session that never opens a PDF must not pay
+        for importing it - or fail if it is absent.
+        """
+        from .pdfdoc import extract_text
+
+        return cls.from_segments(
+            extract_text(p),
+            path=str(p),
+            notes=None,
+            size=stat.st_size,
+            mtime=stat.st_mtime,
+            encoding="pdf",
+            encoding_label="PDF",
+            source="pdf",
+            empty_message="这个 PDF 里没有可提取的文字",
+        )
+
+    @classmethod
     def from_segments(
         cls,
         segments,
@@ -199,14 +337,25 @@ class Book:
         notes: list[str] | None = None,
         size: int | None = None,
         mtime: float | None = None,
+        encoding: str = "epub",
+        encoding_label: str = "EPUB",
+        source: str = "epub",
+        empty_message: str = "这本 EPUB 里没有可读的正文",
     ) -> "Book":
-        """Build a book from chapters that are ALREADY split - i.e. an EPUB spine.
+        """Build a book from chapters that are ALREADY split - i.e. an EPUB spine
+        or a PDF's pages.
 
         An EPUB states its own chapter boundaries, so running the TXT chapter regex
         over its text would be wrong twice over: it would ignore the real spine, and
         Chinese novels are full of in-text "第一章" mentions that the regex would
-        happily turn into phantom chapters. So this path joins the segments and
-        derives the offsets arithmetically, never guessing.
+        happily turn into phantom chapters. A PDF is the same story for a different
+        reason: its page breaks are real boundaries, and the regex knows nothing
+        about them. So this path joins the segments and derives the offsets
+        arithmetically, never guessing.
+
+        The last four parameters exist for the PDF text path, which is the second
+        caller and is not an EPUB. They default to the EPUB values so every existing
+        call site keeps its exact behaviour.
 
         Segments are joined with a blank line so two chapters can never fuse into one
         line, and the offsets are computed as the parts are appended - no second pass
@@ -246,28 +395,28 @@ class Book:
 
         text = "".join(parts)
         if not chapters:
-            raise BookError("这本 EPUB 里没有可读的正文")
+            raise BookError(empty_message)
 
         all_notes = list(notes or [])
         if skipped:
             all_notes.append(f"跳过了 {skipped} 个空章节")
 
         name = os.path.basename(str(path)) or "book.epub"
-        fallback = name[:-5] if name.lower().endswith(".epub") else name
+        fallback = os.path.splitext(name)[0] or name
         return cls(
             id=book_id(path),
             title=title or fallback or "未命名",
             path=os.path.abspath(str(path)),
             size=int(size if size is not None else len(text.encode("utf-8"))),
             mtime=float(mtime if mtime is not None else 0.0),
-            encoding="epub",
-            encoding_label="EPUB",
+            encoding=encoding,
+            encoding_label=encoding_label,
             confident=True,
             text=text,
             chapters=chapters,
             rule_id=None,
             notes=all_notes,
-            source="epub",
+            source=source,
             author=author,
         )
 
@@ -347,19 +496,49 @@ def _mtime_of(path: str) -> float:
 class Progress:
     """Where the reader is. `offset` is a scrollbar pixel value, and the scrollbar
     of a QTextEdit is genuinely pixel-based (verified: 0..33835 for a 500-block
-    document whose singleStep is one line height)."""
+    document whose singleStep is one line height).
+
+    `page` and `mode` are the comic side of the same record. A text book leaves
+    them at their defaults, and an old progress.json that predates them simply
+    loads with the defaults, so no migration is needed.
+
+    `pdf_kind` remembers which reader the user picked for a dual-identity PDF.
+    A PDF is the one format whose kind cannot be read off the extension, so the
+    answer has to be stored somewhere - and the progress record is already keyed
+    by the book's identity, which is what makes "this book, not this file type"
+    the right granularity."""
 
     chapter: int = 0
     offset: int = 0
+    #: 0-based page number for comics. Text books leave it 0.
+    page: int = 0
+    #: Comic reading mode: "" (unset) | "single" | "scroll" | "spread".
+    mode: str = ""
+    #: Which reader a PDF opens in: "" (auto) | "text" | "comic".
+    pdf_kind: str = ""
 
     def to_dict(self) -> dict:
-        return {"chapter": int(self.chapter), "offset": int(self.offset)}
+        return {
+            "chapter": int(self.chapter),
+            "offset": int(self.offset),
+            "page": int(self.page),
+            "mode": str(self.mode or ""),
+            "pdf_kind": str(self.pdf_kind or ""),
+        }
 
     @classmethod
     def from_dict(cls, data: dict | None) -> "Progress":
         if not isinstance(data, dict):
             return cls()
         try:
-            return cls(chapter=max(0, int(data.get("chapter", 0))), offset=max(0, int(data.get("offset", 0))))
+            mode = data.get("mode", "")
+            pdf_kind = data.get("pdf_kind", "")
+            return cls(
+                chapter=max(0, int(data.get("chapter", 0))),
+                offset=max(0, int(data.get("offset", 0))),
+                page=max(0, int(data.get("page", 0))),
+                mode=mode if isinstance(mode, str) else "",
+                pdf_kind=pdf_kind if isinstance(pdf_kind, str) else "",
+            )
         except (TypeError, ValueError):
             return cls()

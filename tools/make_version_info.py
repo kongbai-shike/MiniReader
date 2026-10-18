@@ -19,6 +19,29 @@ import ast
 import sys
 from pathlib import Path
 
+
+def force_utf8_console() -> None:
+    """让输出在中文 Windows 上不被代码页吃掉。
+
+    这个脚本打印的中文（`版本` / `已写出`）在 GBK 里编得出，所以不会像
+    `make_icon.py` 那样崩；但**编得出**和**别人读得对**是两回事——cmd.exe
+    默认代码页 936，重定向到文件再用 UTF-8 读，或者被 PowerShell 7 之类的
+    UTF-8 宿主捕获，就是一片乱码。做法与 `minireader/__main__.py` 的
+    `_force_utf8_console()` 一致（同一个理由：输出格式不该让构建步骤出岔）。
+    """
+    try:
+        import ctypes
+
+        if sys.platform == "win32":
+            ctypes.windll.kernel32.SetConsoleOutputCP(65001)
+        for stream in (sys.stdout, sys.stderr):
+            reconfigure = getattr(stream, "reconfigure", None)
+            if reconfigure is not None:
+                reconfigure(encoding="utf-8", errors="replace")
+    except Exception:  # noqa: BLE001 - output formatting must never break the build
+        pass
+
+
 # 产品信息。改这里就改了 exe 属性页上显示的内容。
 COMPANY = "MiniReader"
 PRODUCT = "MiniReader"
@@ -106,6 +129,7 @@ VSVersionInfo(
 
 
 def main(argv: list[str]) -> int:
+    force_utf8_console()
     root = Path(__file__).resolve().parent.parent
     version = read_version(root / "minireader")
     out = Path(argv[1]).resolve() if len(argv) > 1 else root / "build" / "version_info.txt"
