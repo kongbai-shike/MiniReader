@@ -1,0 +1,11 @@
+# Windows 批处理必须是 CRLF。
+#
+# 实测：build.bat 以 LF 检出/保存时，cmd.exe 解析带 `if (...) else (...)` 多行块的
+# 批处理会错乱——报错形如 `'包（单文件模式）...' 不是内部或外部命令`、
+# `pyinstaller: error: the following arguments are required: scriptname`，
+# 打包直接失败。转成 CRLF 后同一份脚本立刻正常（内容零改动）。
+#
+# `text eol=crlf`：提交进库时统一归一化成 LF（便于 diff / 跨平台阅读），
+# 检出到工作区时强制 CRLF。只影响工作区换行符，不改任何一行内容。
+*.bat  text eol=crlf
+*.cmd  text eol=crlf
