@@ -1102,6 +1102,20 @@ class SettingsDialog(QDialog):
         what.setWordWrap(True)
         form.addRow("", what)
 
+        # 用户第一反应是「Ctrl+Shift+L 按下去和老板键一模一样」——因为**确实一样**：
+        # 两条路径都走 hide()，安全性没有差别。唯一的差别是托盘那点标记，而 Windows 11
+        # 默认把新图标塞进 ^ 溢出区，红点常常根本看不见。这里把话说在前面，免得用户
+        # 以为是键没生效（本机实测：两次隐藏后窗口可见性、标题、任务栏标志完全相同，
+        # 只有托盘图标像素哈希与 tooltip 变了）。
+        self.stealth_boss_note = QLabel(
+            "它和老板键是同一档隐藏（都是把窗口真收起来），区别只在「你怎么知道自己在"
+            "哪一档」：防偷窥开着时托盘图标右上角多一个红点，鼠标停在上面会提示怎么"
+            "解锁。老板键也能解防偷窥；反过来，老板键藏着时按防偷窥键不会把窗口弄出来。"
+        )
+        self.stealth_boss_note.setObjectName("Muted")
+        self.stealth_boss_note.setWordWrap(True)
+        form.addRow("", self.stealth_boss_note)
+
         # 用户会被"按了没反应"骗一次：Windows 对一次按键投递两条热键消息，MiniReader
         # 把 60 ms 内的重复触发合并成一次，所以同一拍内连按两下看起来像没生效。
         # 数字直接取 DEBOUNCE_MS，避免文档与实现对不上。

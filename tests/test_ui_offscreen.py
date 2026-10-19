@@ -2512,6 +2512,24 @@ class TestSettingsNavigation(WindowTestCase):
         finally:
             dlg.deleteLater()
 
+    def test_the_block_says_how_it_differs_from_the_boss_key(self) -> None:
+        """用户第一反应是「按下去和老板键一模一样」——因为**真的**一样。
+
+        实测（`D:\\DSH_work\\compare_hides.py`）：两种隐藏之后 `isVisible`、`windowTitle`、
+        `Qt.Tool` 全部相同，只有托盘图标的像素哈希与 tooltip 变了。所以说明必须点明
+        「同一档隐藏」+「区别只在托盘那个红点」，否则用户会以为防偷窥键没生效。
+        """
+        dlg = self.dialog()
+        try:
+            text = dlg.stealth_boss_note.text()
+            self.assertIn("老板键", text)
+            self.assertIn("同一档隐藏", text, "必须明说两者安全性相同")
+            self.assertIn("红点", text, "唯一的可见区别是托盘红点")
+            self.assertIn("解锁", text)
+            self.assertTrue(dlg.stealth_boss_note.isVisibleTo(dlg.stealth_widget))
+        finally:
+            dlg.deleteLater()
+
     # -- session memory ----------------------------------------------------
 
     def test_the_dialog_reopens_on_the_last_selected_page(self) -> None:
