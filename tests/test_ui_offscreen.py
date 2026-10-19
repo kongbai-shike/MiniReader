@@ -2492,6 +2492,26 @@ class TestSettingsNavigation(WindowTestCase):
         finally:
             dlg.deleteLater()
 
+    def test_the_interval_hint_states_the_real_debounce(self) -> None:
+        """用户最容易把"按键被合并且"当成"热键失灵"，所以说明里必须写清间隔。
+
+        数字取自 `hotkeys.DEBOUNCE_MS`，不是手写的 60：改了去抖窗口而忘了改文案，
+        这条会直接红。0.1 秒是对 60 ms 的**向上取整**，写成"间隔 0.1 秒以上"才是
+        用户能照做的说法。
+        """
+        from minireader.hotkeys import DEBOUNCE_MS
+
+        dlg = self.dialog()
+        try:
+            text = dlg.stealth_interval_note.text()
+            self.assertIn("0.1 秒", text)
+            self.assertIn(f"{DEBOUNCE_MS} 毫秒", text)
+            self.assertIn("合并", text)
+            # 说明在防偷窥小组里，和快捷键编辑器同一块，跟着整组一起启停。
+            self.assertTrue(dlg.stealth_interval_note.isVisibleTo(dlg.stealth_widget))
+        finally:
+            dlg.deleteLater()
+
     # -- session memory ----------------------------------------------------
 
     def test_the_dialog_reopens_on_the_last_selected_page(self) -> None:

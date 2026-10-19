@@ -43,6 +43,11 @@ MOD_SHIFT = 0x0004
 MOD_WIN = 0x0008
 MOD_NOREPEAT = 0x4000  # holding the chord must not machine-gun the toggle
 
+#: 同一个组合键在这个窗口内的重复触发会被合并掉（见类注释里的 coalesce 说明）。
+#: 也是"连按两下要间隔多久"的答案：60 ms 内的第二下会被当成同一次按键。
+#: 设置页的说明文字直接引用这个值，免得文档和实现各写一个数字。
+DEBOUNCE_MS = 60
+
 ERROR_HOTKEY_ALREADY_REGISTERED = 1409
 ERROR_INVALID_WINDOW_HANDLE = 1400
 ERROR_INVALID_PARAMETER = 87
@@ -312,7 +317,7 @@ class HotkeyManager(QAbstractNativeEventFilter):
         self._attached = False
         # Debounce floor. The coalescing below already collapses the double
         # delivery; this only covers a future Qt that splits it across turns.
-        self.debounce_ms = 60
+        self.debounce_ms = DEBOUNCE_MS
         self._clock = QElapsedTimer()
         self._clock.start()
         self._last_fire = -(10 ** 9)

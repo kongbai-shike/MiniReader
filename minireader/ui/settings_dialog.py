@@ -24,7 +24,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 
-from ..hotkeys import HotkeyError, format_hotkey, parse_hotkey, spec_from_qt
+from ..hotkeys import DEBOUNCE_MS, HotkeyError, format_hotkey, parse_hotkey, spec_from_qt
 from ..core import rar
 from ..qt import (
     QApplication,
@@ -1101,6 +1101,18 @@ class SettingsDialog(QDialog):
         what.setObjectName("Muted")
         what.setWordWrap(True)
         form.addRow("", what)
+
+        # 用户会被"按了没反应"骗一次：Windows 对一次按键投递两条热键消息，MiniReader
+        # 把 60 ms 内的重复触发合并成一次，所以同一拍内连按两下看起来像没生效。
+        # 数字直接取 DEBOUNCE_MS，避免文档与实现对不上。
+        self.stealth_interval_note = QLabel(
+            f"连按两次请间隔 0.1 秒以上：系统对一次按键会投递两条热键消息，"
+            f"MiniReader 会把 {DEBOUNCE_MS} 毫秒内的重复触发合并成一次，"
+            f"所以按得太快时第二下会被当成同一次按键。"
+        )
+        self.stealth_interval_note.setObjectName("Muted")
+        self.stealth_interval_note.setWordWrap(True)
+        form.addRow("", self.stealth_interval_note)
 
         warn = QLabel(
             "【重要提示】防偷窥模式是临时状态，不会持久化：重启 MiniReader 后默认关闭。"
