@@ -1,0 +1,66 @@
+[0] 起点
+  [OK ] 窗口看得见  isVisible=True
+  [OK ] 不透明度 = 用户设置值  100%
+  [OK ] 防偷窥模式默认关（重启即关，不持久化）
+  [OK ] 托盘 tooltip 是伪装标题  季度报告
+  [OK ] 快捷键按 Settings 字段名注册，且分派表认得这些名字  'Ctrl+Shift+L'；注册了 ['boss_key', 'stealth_mode_key']
+      截图 C:\Users\pc\Desktop\随手文件\MiniReader\_manual\stealth_shots\01_window_normal.png
+
+[1] 按 Ctrl+Shift+L → 窗口消失（真隐藏，不是降到 1%）
+  [OK ] isVisible() 变成 False  isVisible=False
+  [OK ] 模式标记为开
+  [OK ] 不透明度**没有**被改成 1%（差值就是证据：这是 hide()，不是渐变）  windowOpacity=1.00，LEAVE_HIDE_OPACITY=0.01
+  [OK ] 托盘切到防偷窥图标（逐像素不同）
+  [OK ] 托盘 tooltip 写明怎么解锁  防偷窥模式已开启，按 Ctrl+Shift+L 解锁
+  [OK ] 托盘「显示窗口」可用、「隐藏窗口」不可用
+      截图 C:\Users\pc\Desktop\随手文件\MiniReader\_manual\stealth_shots\02_tray_icon_on.png
+
+[2] 鼠标划过原来的位置 → 不现身
+  [OK ] 硬塞一个 Enter 事件也不现身
+  [OK ] 移出隐身计时器到点后仍然不现身（hide() 之下没有 enter 可触发）
+  [OK ] 移出隐身没有留下 1% 的脏底  windowOpacity=1.00
+
+[3] 再按一次 → 现身
+  [OK ] 窗口回来了  isVisible=True
+  [OK ] 不透明度回到用户设置值  100%
+  [OK ] 模式自动关
+  [OK ] 托盘图标回到原样（逐像素等于起点）
+  [OK ] 托盘 tooltip 回到伪装标题  季度报告
+
+[4] 托盘菜单「显示窗口」→ 现身且自动退出模式
+  [OK ] 先进入防偷窥
+  [OK ] 托盘能叫回来
+  [OK ] 并且自动退出防偷窥模式
+  [OK ] tooltip 一起复位  季度报告
+
+[5] 防偷窥期间按老板键 → 现身且自动退出
+  [OK ] 老板键是又一条回家路
+  [OK ] 模式自动关（不留红着图标却窗口在眼前的状态）
+  [OK ] 老板键自己的账本没被弄脏
+
+[6] 老板键 hide() 之后按 Ctrl+Shift+L → 静默忽略
+  [OK ] 老板键把窗口藏了
+  [OK ] 窗口仍然藏着（没有越过老板键的意图）
+  [OK ] 没有进入防偷窥模式
+  [OK ] 托盘没有变红
+  [OK ] 没有写警告文字
+  [OK ] 老板键自己还是能正常叫回来
+
+[7] 设置页「窗口」页的小组
+  [OK ] 快捷键编辑框在「窗口」页，和鼠标移出隐身同一个小组
+  [OK ] 默认：组可用、没有红字
+  [OK ] 位置在「显示托盘图标」之下、「总在最前」之上  tray=237 stealth=263 ontop=453
+  [OK ] 小块有自己的小标题
+      截图 C:\Users\pc\Desktop\随手文件\MiniReader\_manual\stealth_shots\03_dialog_stealth_block.png
+  [OK ] 没有任何恢复方式 → 整组禁用
+  [OK ] 红字说明理由，且红字本身没被灰掉  至少需要一种恢复方式：打开托盘图标，或给防偷窥模式绑定快捷键
+      截图 C:\Users\pc\Desktop\随手文件\MiniReader\_manual\stealth_shots\04_dialog_no_recovery.png
+  [OK ] 和老板键撞键 → 红字点名冲突  防偷窥快捷键与老板键冲突：按下去分不清是要哪一种隐藏
+  [OK ] 并且挡住「确定」
+      截图 C:\Users\pc\Desktop\随手文件\MiniReader\_manual\stealth_shots\05_dialog_clash.png
+  [OK ] 改完能写回 Settings.stealth_mode_key  Ctrl+Alt+H
+  [OK ] 写回后没有 stealth_mode 这样的布尔字段（模式不落盘）
+
+========================================================================
+手动确认：42/42 通过
+截图目录：C:\Users\pc\Desktop\随手文件\MiniReader\_manual\stealth_shots
