@@ -251,24 +251,47 @@ MiniReader 0.1.0
 ## 7. 测试
 
 ```bat
-:: 全部 609 项测试（约 21 秒，全程无窗口）
+:: 全部 1763 项测试（约 52 秒，全程无窗口）
 py -3.12 -m unittest discover -s tests -t .
 
-:: 分组跑
-py -3.12 -m unittest tests.test_core              :: 分章内核一致性 + 大文件性能（43 项）
-py -3.12 -m unittest tests.test_epub              :: EPUB 解析（25 项）
-py -3.12 -m unittest tests.test_epub_integration  :: EPUB 接进 Book（23 项）
-py -3.12 -m unittest tests.test_store             :: 书签库 SQLite（65 项）
-py -3.12 -m unittest tests.test_storage           :: 存储层（84 项）
-py -3.12 -m unittest tests.test_ui_offscreen      :: 界面：窗口/滚动/翻章/老板键/透明度/伪装/吸附/托盘/设置面板（130 项）
-py -3.12 -m unittest tests.test_toc_panel         :: 目录抽屉与书签列表（44 项）
-py -3.12 -m unittest tests.test_autoscroll        :: 自动滚动（44 项）
-py -3.12 -m unittest tests.test_reading_features  :: 端到端：目录/翻章/书签/自动滚动/排版（54 项）
-py -3.12 -m unittest tests.test_snap              :: 吸附几何（33 项）
-py -3.12 -m unittest tests.test_theme             :: 配色对比度（15 项）
-py -3.12 -m unittest tests.test_hotkeys           :: 热键解析与注册（31 项）
-py -3.12 -m unittest tests.test_win32             :: Win32 封装（18 项，其中 6 项需要真实桌面）
+:: 单独跑一个模块（模块名见下表）
+py -3.12 -m unittest tests.test_ui_offscreen
 ```
+
+分模块实测（逐模块相加 = `discover` 的 **1763**，其中 **8** 项在无桌面环境下跳过）：
+
+| 模块 | 项 | 覆盖内容 |
+| --- | ---: | --- |
+| `test_ui_offscreen` | 175 | 界面：窗口外观、滚动、翻章、老板键、防偷窥、透明度、伪装、吸附、托盘、设置面板 |
+| `test_comic_ui` | 165 | 漫画在真实窗口里的行为 |
+| `test_stage5_spread` | 130 | 阶段 5：双页模式（模式 C） |
+| `test_comic` | 117 | 阶段 2 核心层：格式表 / 压缩包 / 图片文件夹 / ComicBook / 打开裁决 |
+| `test_stage4_scroll` | 97 | 阶段 4：连续滚动模式（模式 B） |
+| `test_reading_features` | 93 | 端到端：目录抽屉 / 书签 / 上下章 / 自动滚动 / 排版 |
+| `test_storage` | 90 | 存储层：几何校验、配置往返、坏文件容错 |
+| `test_rar` | 74 | CBR/RAR 漫画 |
+| `test_epub_fixed` | 70 | 阶段 7：EPUB 固定版式的检测、取页与分派 |
+| `test_text_formats` | 70 | FB2 / DOCX / HTML 三条文字格式路径 |
+| `test_store` | 65 | 书签库：清洗、排序、按书隔离、持久化、坏了一切也降级 |
+| `test_pdf` | 60 | 阶段 3：PDF 判型 / 双路径 / 手工覆盖 / ask-once |
+| `test_mobi` | 57 | 阶段 6 核心层：MOBI/AZW3 |
+| `test_book_base` | 55 | 阶段 1：BookBase / Reader 抽象层 |
+| `test_cb7` | 49 | CB7（7z）漫画 |
+| `test_autoscroll` | 44 | 自动滚动引擎：速度夹取、按时间累计、暂停/恢复、到底自停 |
+| `test_toc_panel` | 44 | 章节目录 / 书签面板（无头） |
+| `test_core` | 43 | 分章内核与冻结的 JS 实现逐字一致 + 大文件性能 |
+| `test_epub_spread` | 37 | 阶段 8：`rendition:spread` 的解析与消费 |
+| `test_hotkeys` | 35 | 热键解析、Qt 按键翻译、批量注册、60 ms 去抖 |
+| `test_snap` | 33 | 吸附几何与离屏夹取（纯几何，无 Qt 无窗口） |
+| `test_epub` | 25 | EPUB 解析 |
+| `test_stage2_qq_layout` | 25 | 阶段 2：QQ 迷你窗竖版形态 |
+| `test_theme_switch` | 25 | 主题切换（暗夜 / 白昼） |
+| `test_epub_integration` | 23 | EPUB 通过 `Book.from_path` 的端到端接入 |
+| `test_stage3_context_menu` | 20 | 阶段 3 交互项（右键菜单等） |
+| `test_win32` | 18 | Win32 封装（其中 6 项需要真实桌面） |
+| `test_theme` | 15 | 配色对比度审计 |
+| `test_app_paths` | 8 | 源码 / 打包两种形态下的资源路径与可写目录 |
+| `test_app_launch` | 1 | **真跑 `main()`**：启动顺序、热键装配、退出清理 |
 
 `test_reading_features` 是唯一一个**把整条链路装起来跑**的模块：真开一个窗口、真加载一本书、真点按钮、真写一份临时 SQLite。它和 `test_ui_offscreen` 共用同一个 `WindowTestCase` 沙箱。
 
