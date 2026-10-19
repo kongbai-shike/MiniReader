@@ -35,6 +35,7 @@ from minireader.qt import (  # noqa: E402
     EDGE_RIGHT,
     EDGE_TOP,
     QApplication,
+    QColor,
     QEnterEvent,
     QEvent,
     QGroupBox,
@@ -173,12 +174,18 @@ class FakeTray(QObject):
         self.hidden_state = None
         self.opacity = None
         self.shutdown_called = False
+        self.stealth_state = None
+        self.stealth_spec = None
 
     def set_title(self, title: str) -> None:
         self.title = title
 
     def set_hidden_state(self, hidden: bool) -> None:
         self.hidden_state = bool(hidden)
+
+    def set_stealth_state(self, on: bool, spec: str = "") -> None:
+        self.stealth_state = bool(on)
+        self.stealth_spec = spec
 
     def set_opacity(self, percent: int) -> None:
         self.opacity = int(percent)
@@ -649,6 +656,231 @@ class TestBossKey(WindowTestCase):
         blob = (self.tmp / "MiniReader" / "settings.json").read_text(encoding="utf-8")
         self.assertIn("opacity", blob)
         self.assertNotIn("hidden", blob)
+
+
+class TestStealthMode(WindowTestCase):
+    """防偷窥模式：和老板键、移出隐身都相邻，但三者必须各管各的。
+
+    The mode exists because opacity=0.01 is not hidden: a screenshot tool captures a
+    translucent window's content, and at some contrast/brightness settings its outline is
+    still there. So this is `hide()`, and the tests below are mostly about the three ways
+    back (its own chord, the boss key, the tray) plus the one case where it must refuse.
+    """
+
+    def stealth_window(self, **kw) -> MiniWindow:
+        """A window with only the stealth chord live (no boss key), plus a tray."""
+        window = self.make_window(path=self.book_path, **kw)
+        window.settings.stealth_mode_key = "Ctrl+Alt+H"
+        window.update_boss_capability({"stealth_mode_key": (True, "")})
+        return window
+
+    def test_the_chord_really_hides_the_window_and_does_not_fade_it(self) -> None:
+        """`hide()`, not opacity 0.01: the requirement is that the pixels are gone."""
+        window = self.stealth_window()
+        window.attach_tray(FakeTray())
+        tray = window.tray
+        self.assertTrue(window.isVisible())
+        window.toggle_stealth_mode()
+        _app.processEvents()
+        self.assertFalse(window.isVisible(), "防偷窥必须真隐藏")
+        self.assertTrue(window._stealth_mode)
+        self.assertTrue(tray.stealth_state, "托盘要换成红点图标")
+        self.assertEqual(tray.stealth_spec, "Ctrl+Alt+H")
+        self.assertTrue(tray.hidden_state, "托盘菜单要切到「显示窗口」可用")
+
+    def test_the_chord_alone_is_enough_to_come_back(self) -> None:
+        """No tray, no boss key: the stealth chord is itself the way home."""
+        window = self.stealth_window()
+        self.assertIsNone(window.tray)
+        self.assertTrue(window.can_stealth_hide())
+        window.toggle_stealth_mode()
+        _app.processEvents()
+        self.assertFalse(window.isVisible())
+        window.toggle_stealth_mode()
+        _app.processEvents()
+        self.assertTrue(window.isVisible(), "再按一次就该回来")
+        self.assertFalse(window._stealth_mode)
+        # 回来的不透明度必须是用户设置的那个，不是 LEAVE_HIDE_OPACITY。
+        self.assertGreater(window.windowOpacity(), 0.1)
+        expected = window.settings.target_opacity(active=True) / 100
+        self.assertAlmostEqual(window.windowOpacity(), expected, places=2)
+
+    def test_a_mouse_leave_cannot_bring_it_back(self) -> None:
+        """The whole point: the window is `hide()`-ed, so there is no enterEvent to
+        receive. The leave-hide path must not resurrect it either."""
+        self.settings.mouse_leave_hide = True
+        window = self.stealth_window()
+        window.toggle_stealth_mode()
+        _app.processEvents()
+        window._schedule_leave_hide()
+        window._apply_leave_hide()
+        _app.processEvents()
+        self.assertFalse(window.isVisible(), "移出隐身不许把窗口叫回来")
+        self.assertIsNone(window._opacity_before_hide, "隐藏期间不该记账")
+        self.assertTrue(window._stealth_mode)
+
+    def test_the_tray_shows_it_again_and_ends_the_mode(self) -> None:
+        """托盘「显示窗口」是第二条回家路，回来之后模式必须跟着结束——否则图标红着、
+        提示还写着「按 X 解锁」，可窗口就在眼前。"""
+        window = self.stealth_window()
+        window.attach_tray(FakeTray())
+        tray = window.tray
+        window.toggle_stealth_mode()
+        _app.processEvents()
+        tray.showRequested.emit()
+        _app.processEvents()
+        self.assertTrue(window.isVisible())
+        self.assertFalse(window._stealth_mode)
+        self.assertFalse(tray.stealth_state, "托盘要退回正常图标")
+        self.assertEqual(tray.stealth_spec, "Ctrl+Alt+H", "退出后仍记着当前快捷键")
+
+    def test_the_boss_key_shows_it_again_and_ends_the_mode(self) -> None:
+        """老板键按下时用户要的是「回来」，不是「再藏一次」——它现在就是解锁。"""
+        window = self.stealth_window()
+        window.update_boss_capability(
+            {"boss_key": (True, ""), "stealth_mode_key": (True, "")}
+        )
+        window.attach_tray(FakeTray())
+        window.toggle_stealth_mode()
+        _app.processEvents()
+        window.toggle_boss()
+        _app.processEvents()
+        self.assertTrue(window.isVisible())
+        self.assertFalse(window._stealth_mode)
+        self.assertFalse(window.boss_hidden, "老板键不该把账记反")
+
+    def test_the_chord_is_ignored_while_the_boss_key_holds_the_window(self) -> None:
+        """Ambiguous instruction: the window is already gone by another route, so do
+        nothing rather than guess (showing it would undo what the user just asked for)."""
+        window = self.stealth_window()
+        window.set_boss_hint(True, self.settings.boss_key)
+        window.toggle_boss()
+        _app.processEvents()
+        self.assertFalse(window.isVisible())
+        self.assertTrue(window.boss_hidden)
+        window.toggle_stealth_mode()
+        _app.processEvents()
+        self.assertFalse(window.isVisible(), "静默忽略")
+        self.assertFalse(window._stealth_mode)
+        self.assertTrue(window.boss_hidden, "老板键的账不许被改")
+        self.assertEqual(window.warn_label.text(), "", "也不该弹警告")
+
+    def test_hiding_is_refused_with_no_way_back_at_all(self) -> None:
+        """Same safety rule as the boss key: never hide without a door home."""
+        window = self.make_window(path=self.book_path)
+        window.update_boss_capability({})
+        window.settings.stealth_mode_key = ""
+        self.assertFalse(window.can_stealth_hide())
+        window.toggle_stealth_mode()
+        _app.processEvents()
+        self.assertTrue(window.isVisible(), "不许隐藏")
+        self.assertFalse(window._stealth_mode)
+        self.assertIn("阻止隐藏", window.warn_label.text())
+
+    def test_the_mode_is_never_written_to_disk(self) -> None:
+        """Only the chord is a preference. A persisted "hidden" would mean a window that
+        starts the next launch invisible, with no chord pressed to explain it."""
+        window = self.stealth_window()
+        window.toggle_stealth_mode()
+        _app.processEvents()
+        window.save_geometry()
+        window.persist_progress()
+        raw = json.loads(
+            (self.tmp / "MiniReader" / "settings.json").read_text(encoding="utf-8")
+        )
+        self.assertEqual(raw.get("stealth_mode_key"), "Ctrl+Alt+H", "快捷键要落盘")
+        self.assertNotIn("stealth_mode", raw, "模式本身不许落盘")
+        self.assertNotIn("hidden", raw)
+        # 重启后的样子：模式默认关，快捷键还在。
+        back = Settings.load()
+        self.assertFalse(getattr(back, "stealth_mode", False))
+        self.assertEqual(back.stealth_mode_key, "Ctrl+Alt+H")
+
+    def test_the_badge_is_painted_on_the_existing_icon(self) -> None:
+        """防偷窥态必须是"现有图标 + 红点"，不是另画一个。
+
+        Two things are asserted, and the second is the actual requirement: the images
+        differ, **and** they differ only in the top-right corner - every other pixel is
+        the shipped icon untouched. A redrawn glyph would change the whole picture and
+        the tray would look like a different program at the one moment the user needs to
+        recognise it.
+        """
+        from minireader.ui.tray import STEALTH_BADGE, load_tray_icon, make_stealth_icon
+
+        def image(icon):
+            return icon.pixmap(16, 16).toImage()
+
+        def at(img, x, y) -> int:
+            return img.pixel(x, y)
+
+        normal = load_tray_icon()
+        stealth = make_stealth_icon(normal)
+        self.assertFalse(normal.isNull())
+        self.assertFalse(stealth.isNull())
+
+        base, badge = image(normal), image(stealth)
+        differences = [
+            (x, y)
+            for y in range(base.height())
+            for x in range(base.width())
+            if at(base, x, y) != at(badge, x, y)
+        ]
+        self.assertTrue(differences, "防偷窥图标必须和正常图标不一样")
+        # 右上角那一块之外一个像素都不许变（红点本身是圆的，所以只看区域）。
+        self.assertTrue(
+            all(x >= 8 and y <= 8 for x, y in differences),
+            f"红点应该只在右上角，实际改动落在 {sorted(differences)[:6]}…",
+        )
+        # 红点本身的像素：允许抗锯齿的边上混色，但"确实是那个红"的像素必须存在，
+        # 而且只出现在右上角。
+        red = QColor(STEALTH_BADGE).rgb()
+        red_pixels = [
+            (x, y)
+            for y in range(badge.height())
+            for x in range(badge.width())
+            if at(badge, x, y) == red
+        ]
+        self.assertTrue(red_pixels, "右上角那个点必须是 STEALTH_BADGE 的红")
+        self.assertTrue(all(x >= 8 and y <= 8 for x, y in red_pixels))
+
+    def test_the_badge_falls_back_to_the_drawn_glyph_without_an_ico(self) -> None:
+        """源码树里没有 assets/minireader.ico 时也要有红点，不能静默变成空图。"""
+        from minireader.ui.tray import make_icon, make_stealth_icon
+
+        drawn = make_icon()
+        badge = make_stealth_icon(drawn)
+        self.assertFalse(badge.isNull())
+        self.assertNotEqual(
+            badge.pixmap(16, 16).toImage().pixel(14, 1),
+            drawn.pixmap(16, 16).toImage().pixel(14, 1),
+        )
+
+    def test_the_tray_tooltip_repeats_the_chord(self) -> None:
+        """Once the window is hidden this tooltip is the only place the user can read
+        the way out, so it must name the live chord.
+
+        A real `TrayIcon`, not the fake: offscreen QPA has no system tray to appear in,
+        but the icon object, its pixmaps and its tooltip all work - and this is exactly
+        the path that a fake would paper over (it once hid a NameError here).
+        """
+        from minireader.ui.tray import TrayIcon
+
+        tray = TrayIcon(title="季度报告")
+        try:
+            self.assertEqual(tray.toolTip(), "季度报告")
+            tray.set_stealth_state(True, "Ctrl+Alt+H")
+            self.assertIn("Ctrl+Alt+H", tray.toolTip())
+            self.assertIn("防偷窥", tray.toolTip())
+            tray.set_stealth_state(False, "Ctrl+Alt+H")
+            self.assertEqual(tray.toolTip(), "季度报告")
+            # 伪装标题在模式期间照写不误，只是先不显示——退出时要原样回来。
+            tray.set_stealth_state(True, "Ctrl+Alt+H")
+            tray.set_title("新的伪装")
+            self.assertIn("防偷窥", tray.toolTip())
+            tray.set_stealth_state(False, "Ctrl+Alt+H")
+            self.assertEqual(tray.toolTip(), "新的伪装")
+        finally:
+            tray.shutdown()
 
 
 class TestPersistence(WindowTestCase):
@@ -2039,9 +2271,12 @@ class TestSettingsNavigation(WindowTestCase):
                                 dlg.preload_spin, dlg.binding_combo,
                                 dlg.cover_alone_check)),
                 ("外观", (dlg.opacity_slider, dlg.bg_alpha_slider, dlg.compat_check)),
-                ("窗口", (dlg.snap_check, dlg.leave_hide_check,
+                ("窗口", (dlg.snap_check, dlg.leave_hide_check, dlg.stealth_edit,
                           dlg.on_top_check, dlg.taskbar_check)),
-                ("全局快捷键", tuple(dlg.hotkey_edits.values())),
+                ("全局快捷键", tuple(
+                    edit for name, edit in dlg.hotkey_edits.items()
+                    if name != "stealth_mode_key"
+                )),
             ]
             self.assertEqual(
                 [title for title, _ in controls],
@@ -2162,7 +2397,7 @@ class TestSettingsNavigation(WindowTestCase):
             self.assertEqual(len(seen), quiet, "窗口行为项没有实时预览")
 
             dlg._nav.setCurrentRow(3)
-            next(iter(dlg.hotkey_edits.values())).set_spec("")  # capture, save-only
+            dlg.hotkey_edits["boss_key"].set_spec("")  # capture, save-only
             self.assertEqual(len(seen), quiet, "快捷键捕获没有实时预览")
 
             dlg._nav.setCurrentRow(1)
@@ -2188,7 +2423,7 @@ class TestSettingsNavigation(WindowTestCase):
             dlg._nav.setCurrentRow(2)
             dlg.snap_check.setChecked(not original[2])
             dlg._nav.setCurrentRow(3)
-            next(iter(dlg.hotkey_edits.values())).set_spec("")
+            dlg.hotkey_edits["boss_key"].set_spec("")
             self.assertEqual(
                 (self.settings.font_size, self.settings.opacity,
                  self.settings.snap_enabled, self.settings.boss_key),
@@ -2207,6 +2442,55 @@ class TestSettingsNavigation(WindowTestCase):
             self.assertEqual(again.hotkey_edits["boss_key"].spec(), original[3])
         finally:
             self._dispose(again)
+
+    # -- 防偷窥模式 -------------------------------------------------------
+
+    def test_the_stealth_chord_is_edited_on_the_window_page(self) -> None:
+        """The editor lives next to the mouse-leave checkbox, but is the same object the
+        hotkey page's validation walks - one field, one editor, one write-back."""
+        self.settings.stealth_mode_key = "Ctrl+Alt+H"
+        dlg = self.dialog()
+        try:
+            self.assertIs(dlg.hotkey_edits["stealth_mode_key"], dlg.stealth_edit)
+            self.assertEqual(dlg.stealth_edit.spec(), "Ctrl+Alt+H")
+            dlg.stealth_edit.set_spec("Ctrl+Alt+J")
+            self.assertEqual(dlg.apply_to(Settings()).stealth_mode_key, "Ctrl+Alt+J")
+        finally:
+            dlg.deleteLater()
+
+    def test_the_block_is_disabled_when_no_way_back_is_left(self) -> None:
+        """界面要和运行时一致：没有托盘、没有快捷键时，MiniWindow 也会拒绝隐藏，
+        所以这里整块变灰并给出理由，而不是让人以为配好了。"""
+        dlg = self.dialog()
+        try:
+            self.assertTrue(dlg.stealth_widget.isEnabled(), "默认状态下可用")
+            dlg.tray_check.setChecked(False)
+            dlg.hotkey_edits["boss_key"].set_spec("")
+            dlg.stealth_edit.set_spec("")
+            self.assertFalse(dlg.stealth_widget.isEnabled())
+            self.assertIn("恢复方式", dlg.stealth_note.text())
+            self.assertTrue(
+                dlg.stealth_note.isEnabled(),
+                "红字在禁用块之外：它是禁用的理由，灰掉就没人看得到理由了",
+            )
+            # 托盘复选框在块外：把它打开就回到可用状态，不会被灰住出不来。
+            dlg.tray_check.setChecked(True)
+            self.assertTrue(dlg.stealth_widget.isEnabled())
+            self.assertEqual(dlg.stealth_note.text(), "")
+        finally:
+            dlg.deleteLater()
+
+    def test_a_clash_with_the_boss_key_is_a_blocking_error(self) -> None:
+        """同一个组合键分不清"要哪一种隐藏"，所以既红字点名、也挡住"确定"。"""
+        dlg = self.dialog()
+        try:
+            dlg.stealth_edit.set_spec(dlg.hotkey_edits["boss_key"].spec())
+            self.assertIn("老板键", dlg.stealth_note.text())
+            self.assertIn("冲突", dlg.stealth_note.text())
+            self.assertIn("同一个组合键", dlg.hotkey_note.text())
+            self.assertFalse(dlg._ok_button.isEnabled())
+        finally:
+            dlg.deleteLater()
 
     # -- session memory ----------------------------------------------------
 

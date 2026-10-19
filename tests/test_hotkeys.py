@@ -23,6 +23,7 @@ from minireader.hotkeys import (  # noqa: E402
     spec_from_qt,
 )
 from minireader.qt import Qt, enum_value  # noqa: E402
+from minireader.storage import HOTKEY_FIELDS, Settings  # noqa: E402
 
 
 def qt(name: str) -> int:
@@ -270,6 +271,72 @@ class TestRegisterAll(unittest.TestCase):
         """`NullHotkeys` has the same two methods, so the same code path serves both."""
         results = register_all(NullHotkeys(lambda name: None), {"boss_key": "Ctrl+Shift+`"}, hwnd=0)
         self.assertIn("boss_key", results)
+
+
+class _StubWindow:
+    """Records which window action a dispatched chord reached."""
+
+    def __init__(self) -> None:
+        self.calls: list[str] = []
+
+    def toggle_boss(self) -> None:
+        self.calls.append("boss")
+
+    def toggle_stealth_mode(self) -> None:
+        self.calls.append("stealth")
+
+    def step_chapter(self, delta: int) -> None:
+        self.calls.append(f"chapter{delta:+d}")
+
+    def set_opacity_percent(self, percent: int) -> None:
+        self.calls.append(f"opacity{percent}")
+
+
+class TestHotkeyDispatch(unittest.TestCase):
+    """The dispatcher table is keyed by Settings field names.
+
+    This is a regression guard, not decoration: it used to be keyed by short names
+    ("boss", "next"), which can never equal what `register_all` registered
+    ("boss_key", "hotkey_next") - so every global hotkey press did nothing, silently.
+    Nothing caught it because the dispatcher was a closure inside `main()`.
+    """
+
+    def actions(self, settings=None):
+        from minireader.__main__ import hotkey_actions
+
+        self.window = _StubWindow()
+        self.settings = settings or Settings()
+        return hotkey_actions(self.window, self.settings)
+
+    def test_every_registered_hotkey_has_an_action(self) -> None:
+        actions = self.actions()
+        self.assertEqual(
+            set(actions), {name for name, _field, _label in HOTKEY_FIELDS}
+        )
+
+    def test_the_two_hiding_chords_reach_their_own_actions(self) -> None:
+        """Two chords, two meanings: one hides the window, one does not."""
+        actions = self.actions()
+        actions["boss_key"]()
+        actions["stealth_mode_key"]()
+        self.assertEqual(self.window.calls, ["boss", "stealth"])
+
+    def test_chapter_chords_carry_a_direction(self) -> None:
+        actions = self.actions()
+        actions["hotkey_next"]()
+        actions["hotkey_prev"]()
+        self.assertEqual(self.window.calls, ["chapter+1", "chapter-1"])
+
+    def test_the_opacity_chords_clamp_and_use_the_live_value(self) -> None:
+        """The value is read when the chord fires, not when the table was built."""
+        settings = Settings(opacity=95)
+        actions = self.actions(settings)
+        actions["hotkey_opacity_up"]()
+        self.assertEqual(self.window.calls, ["opacity100"], "上限 100")
+        settings.opacity = 35
+        actions["hotkey_opacity_down"]()
+        self.assertEqual(self.window.calls[-1], "opacity30", "下限 30")
+
 
 
 if __name__ == "__main__":

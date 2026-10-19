@@ -23,6 +23,7 @@ if ROOT not in sys.path:
 
 from minireader.core.model import Book, Progress, book_id  # noqa: E402
 from minireader.storage import (  # noqa: E402
+    DEFAULT_SETTINGS,
     HOTKEY_FIELDS,
     Library,
     ProgressStore,
@@ -484,12 +485,14 @@ class TestHotkeyFields(SandboxedAppData):
         "do not register", and `update_boss_capability` reads an absent boss_key as
         grounds to revoke the boss key rather than leave a stale "available"."""
         settings = Settings(boss_key="", hotkey_next="Ctrl+Right", hotkey_prev="",
-                            hotkey_opacity_up="", hotkey_opacity_down="")
+                            hotkey_opacity_up="", hotkey_opacity_down="",
+                            stealth_mode_key="")
         self.assertEqual(set(settings.hotkeys()), {"hotkey_next"})
 
     def test_hotkeys_is_empty_when_nothing_is_bound(self) -> None:
         settings = Settings(boss_key="", hotkey_next="", hotkey_prev="",
-                            hotkey_opacity_up="", hotkey_opacity_down="")
+                            hotkey_opacity_up="", hotkey_opacity_down="",
+                            stealth_mode_key="")
         self.assertEqual(settings.hotkeys(), {})
 
     def test_the_hotkey_names_are_the_field_names(self) -> None:
@@ -516,6 +519,29 @@ class TestHotkeyFields(SandboxedAppData):
         back = Settings.load()
         self.assertEqual(back.boss_key, "")
         self.assertEqual(back.hotkey_next, "")
+
+    def test_the_stealth_key_round_trips(self) -> None:
+        settings = Settings(stealth_mode_key="Ctrl+Alt+H")
+        settings.save()
+        back = Settings.load()
+        self.assertEqual(back.stealth_mode_key, "Ctrl+Alt+H")
+        self.assertIsNot(back.stealth_mode_key, None)
+
+    def test_the_stealth_mode_itself_has_no_persisted_field(self) -> None:
+        """Only the chord is a preference; "am I hiding right now" is session state.
+
+        A persisted `stealth_mode: true` would make the next launch start with a hidden
+        window - unrecoverable on a machine where the chord failed to register and the
+        tray is off. The mode lives in a MiniWindow instance variable instead.
+        """
+        self.assertEqual(Settings().stealth_mode_key, "Ctrl+Shift+L")
+        self.assertNotIn("stealth_mode", DEFAULT_SETTINGS, "模式本身不许有字段")
+        for name in DEFAULT_SETTINGS:
+            if name == "stealth_mode_key":
+                continue        # 唯一该落盘的东西：用哪个组合键
+            with self.subTest(name=name):
+                self.assertNotIn("stealth", name)
+                self.assertNotIn("hidden", name)
 
     def test_snap_distance_is_clamped(self) -> None:
         """Capped at 60 px: a larger pull stops reading as "snapping" and starts reading

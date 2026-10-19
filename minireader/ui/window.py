@@ -625,9 +625,16 @@ class MiniWindow(QWidget):
         self.book: Book | None = None
         self.chapter_index = 0
         self.boss_hidden = False
+        # 防偷窥模式（Ctrl+Shift+L）。**故意只是实例变量**：它和 boss_hidden 一样是
+        # 会话状态，重启后必须归零——一个开机就自动隐藏的窗口，在热键注册失败又没有
+        # 托盘的那台机器上是找不回来的。唯一落盘的是"用哪个组合键"。
+        self._stealth_mode = False
         self.tray = None
         self._boss_available = False
         self._boss_spec = settings.boss_key
+        # 防偷窥快捷键自己是否注册成功。和 _boss_available 分开记：两者是两条独立的
+        # 回家路，托盘在时任何一条都够用，所以不能用老板键的结果去顶替。
+        self._stealth_available = False
         self._drag_origin = None
         self._quit_on_close = True
         # 只有托盘菜单的"退出"（或应用外壳的 real_quit）会把它置 True。✕ 和老板键都只
@@ -1865,6 +1872,8 @@ class MiniWindow(QWidget):
             labels=HOTKEY_LABELS,
         )
         self.update_boss_capability(results)
+        # 快捷键可能刚被改过：模式开着的话，托盘提示里的"按 X 解锁"要立刻换成新组合键。
+        self._update_tray_stealth_indicator(self._stealth_mode)
         failures = [f"{HOTKEY_LABELS.get(name, name)}：{message}" for name, (ok, message) in results.items() if not ok]
         if failures:
             self.set_warning("；".join(failures))
@@ -1885,6 +1894,8 @@ class MiniWindow(QWidget):
         tray.set_hidden_state(self.boss_hidden)
         tray.set_opacity(self.settings.opacity)
         tray.set_title(self.window_title())
+        # 托盘换得比模式晚到（设置里刚打开托盘）：新图标必须立刻带上当前的红点/提示。
+        tray.set_stealth_state(self._stealth_mode, self.settings.stealth_mode_key)
         self.update_boss_capability()
 
     def quit_app(self) -> None:
@@ -2798,6 +2809,11 @@ class MiniWindow(QWidget):
         if results is not None:
             ok, message = results.get("boss_key", (False, "未绑定"))
             self._boss_available = bool(ok)
+            # 防偷窥快捷键用的是同一个 results 视图：没绑定时同样必须撤销上一次的
+            # "可用"，否则设置页关掉它之后主窗还会以为按下去有用。
+            self._stealth_available = bool(
+                results.get("stealth_mode_key", (False, "未绑定"))[0]
+            )
             if ok:
                 self.hint_label.setText(f"{format_hotkey(self._boss_spec)} 隐身")
                 self.hint_label.setToolTip("按这个组合键把窗口整个藏起来，再按一次回来")
@@ -2849,6 +2865,11 @@ class MiniWindow(QWidget):
         """
         self._cancel_leave_hide()
         self._restore_opacity_if_hidden()
+        # 防偷窥模式被别的路径叫醒（托盘"显示窗口"、第二个实例、双击任务栏）：模式
+        # 必须跟着退，否则托盘图标会红着、提示还写着"按 X 解锁"，可窗口明明在眼前。
+        if self._stealth_mode:
+            self._stealth_mode = False
+            self._update_tray_stealth_indicator(False)
         self.boss_hidden = False
         if self.isMinimized():
             self.showNormal()
@@ -2871,6 +2892,11 @@ class MiniWindow(QWidget):
         return bool(self._boss_available or self.tray is not None)
 
     def toggle_boss(self) -> None:
+        # 防偷窥模式下老板键就是"解锁"：用户按的是同一条回家路。不这么写的话，下面
+        # 的 boss_hidden==False 分支会把一个真隐藏的窗口再 hide() 一次（并记错账）。
+        if self._stealth_mode:
+            self._leave_stealth_mode()
+            return
         if self.boss_hidden:
             self.show_from_boss()
         elif self.can_hide():
@@ -2879,6 +2905,11 @@ class MiniWindow(QWidget):
             self.set_warning("热键和托盘都不可用，已阻止隐藏（否则窗口找不回来）")
 
     def hide_to_boss(self) -> None:
+        # 托盘"隐藏窗口"走的是这条路径。目标状态是"藏起来"，所以模式静默退出而不是
+        # 走 _leave_stealth_mode()——那会把窗口 show() 出来。
+        if self._stealth_mode:
+            self._stealth_mode = False
+            self._update_tray_stealth_indicator(False)
         self.boss_hidden = True
         # 待执行的降透明度要撤销：窗口马上就 hide() 了，再降一次 0 只会留下脏状态。
         self._cancel_leave_hide()
@@ -2902,6 +2933,67 @@ class MiniWindow(QWidget):
         # LEAVE_HIDE_OPACITY 当成"用户设置的值"恢复回来。
         self._opacity_before_hide = None
         self.refresh_opacity()
+
+    # ---- stealth mode (防偷窥) -------------------------------------------
+
+    def toggle_stealth_mode(self) -> None:
+        """防偷窥模式开关。进入时 hide()，退出时 show() + 恢复 opacity。
+
+        和老板键、移出隐身的区别是**目的**而不是机制：老板键是"我自己要离开一下"，
+        移出隐身是"路过的人看一眼也无所谓"，这个模式是"同事就站在旁边"——所以它必须
+        用 hide()，不可能是 opacity=0.01：截图工具能把半透明窗口的内容原样抓下来，
+        某些对比度下轮廓也还看得见。hide() 藏的是窗口本身，不是它的样子。
+
+        边界：窗口已经被老板键藏起来了（isVisible() 为假）而模式没开——这时按这个键
+        是个歧义指令，静默忽略。显示它等于绕过老板键的意图（用户按的是另一个键）。
+        """
+        if self._stealth_mode:
+            self._leave_stealth_mode()
+        elif self.isVisible():
+            self._enter_stealth_mode()
+        # else: 已被老板键藏起来，静默忽略
+
+    def can_stealth_hide(self) -> bool:
+        """防偷窥模式也遵守"至少一种恢复方式"：快捷键、老板键、托盘，有一个就够。"""
+        return bool(
+            self._stealth_available or self._boss_available or self.tray is not None
+        )
+
+    def _enter_stealth_mode(self) -> None:
+        if not self.can_stealth_hide():
+            self.set_warning("防偷窥快捷键和托盘都不可用，已阻止隐藏（否则窗口找不回来）")
+            return
+        self._stealth_mode = True
+        # 待执行的移出隐身要撤掉：窗口马上 hide()，计时器到点还会再改一次不透明度，
+        # 在窗口下次出现时留下一个 1% 的脏底。
+        self._cancel_leave_hide()
+        self._opacity_before_hide = None
+        self.hide()
+        if self.tray is not None:
+            self.tray.set_hidden_state(True)
+        self._update_tray_stealth_indicator(True)
+
+    def _leave_stealth_mode(self) -> None:
+        self._stealth_mode = False
+        self._cancel_leave_hide()
+        # 顺序照 `_restore_opacity_if_hidden` 的约定：先清账本再刷新不透明度，否则
+        # refresh_opacity 的"正在移出隐身"早退会把窗口留在 LEAVE_HIDE_OPACITY 上。
+        self._opacity_before_hide = None
+        if self.isMinimized():
+            self.showNormal()
+        elif not self.isVisible():
+            self.show()
+        self.raise_()
+        self.activateWindow()
+        self.apply_opacity(self.settings.target_opacity(active=True), animate=False)
+        if self.tray is not None:
+            self.tray.set_hidden_state(False)
+        self._update_tray_stealth_indicator(False)
+
+    def _update_tray_stealth_indicator(self, on: bool) -> None:
+        """把模式状态交给托盘（红点 + "按 X 解锁"的 tooltip）。托盘可以不存在。"""
+        if self.tray is not None:
+            self.tray.set_stealth_state(bool(on), self.settings.stealth_mode_key)
 
     # ---- drag and drop ---------------------------------------------------
 

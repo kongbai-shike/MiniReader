@@ -138,6 +138,7 @@ def _stylesheet() -> str:
     QLabel {{ color: {p['fg']}; font-size: 13px; }}
     QLabel#Muted {{ color: {p['muted']}; font-size: 12px; }}
     QLabel#Warn {{ color: {p['warn']}; font-size: 12px; }}
+    QLabel#SubHeading {{ color: {p['fg']}; font-size: 12px; font-weight: bold; }}
     QLabel:disabled {{ color: {x['disabled_fg']}; }}
     QGroupBox {{
         background: {p['card']}; color: {p['fg']};
@@ -372,6 +373,10 @@ class SettingsDialog(QDialog):
             bool(settings.always_on_top),
             bool(settings.hide_from_taskbar),
         )
+        # 热键编辑器按字段名索引，**在所有页构建之前**就建好：防偷窥快捷键的编辑器
+        # 长在「窗口」页（它属于那个复选框的小组），其余长在「全局快捷键」页，而
+        # 校验/写回/恢复默认只认这一张表。
+        self.hotkey_edits: dict[str, HotkeyEdit] = {}
         self._build(settings)
         self._fit_to_content_and_screen()
 
@@ -560,6 +565,12 @@ class SettingsDialog(QDialog):
         # aliases _scroll to that page's area and re-fits the dialog.
         self._nav.setCurrentRow(row)
         # Validate once up front so the OK button starts in the right state.
+        # 顺序也要修一次：防偷窥的编辑器在「窗口」页先建（那一页先构建），而
+        # hotkey_edits 的键序应当跟 HOTKEY_FIELDS 一致——否则遍历这张表的代码
+        # （校验、测试里的 next(iter(...))）就会先拿到最后一个字段。
+        self.hotkey_edits = {
+            name: self.hotkey_edits[name] for name, _field, _label in HOTKEY_FIELDS
+        }
         self._on_hotkeys_changed()
 
     def _make_page(self, title: str, subtitle: str, group: QGroupBox):
@@ -1031,7 +1042,12 @@ class SettingsDialog(QDialog):
 
         self.tray_check = QCheckBox("显示托盘图标")
         self.tray_check.setChecked(bool(s.show_tray))
+        self.tray_check.toggled.connect(self._on_recovery_toggled)
         form.addRow("", self.tray_check)
+
+        form.addRow(self._stealth_block(s))
+        # 红字在块外：块整组禁用时它仍然亮着，因为它是"为什么禁用"的说明。
+        form.addRow("", self.stealth_note)
 
         # 「点 ✕ 隐藏到托盘」复选框已移除：入口统一到 main.py 常驻模型后，✕ 一律
         # 收起窗口，退出只走托盘菜单，不再有可配置分支。Settings.close_to_tray
@@ -1049,18 +1065,80 @@ class SettingsDialog(QDialog):
 
         return box
 
+    def _stealth_block(self, s: Settings) -> QWidget:
+        """防偷窥模式：藏在"鼠标移出隐身"下面，因为它们是同一个问题的两档答案。
+
+        故意**不是一个 QGroupBox**：这一页的版式约定是"一页一张卡片"（见
+        `test_each_page_holds_exactly_its_own_group`），嵌套的分组框会破坏它。用一个小
+        标题 + 缩进的表单块表达"从属关系"，视觉上就是分组。
+
+        这里**只有快捷键是可配的**：模式本身是会话状态，不落盘，所以没有复选框——
+        一个"保存为开"的开关会在下次启动时把一个窗口藏起来，而在快捷键注册失败、托
+        盘又被关掉的那台机器上，那个窗口就再也回不来了。
+        """
+        block = QWidget()
+        outer = QVBoxLayout(block)
+        outer.setContentsMargins(0, 8, 0, 0)
+        outer.setSpacing(4)
+        heading = QLabel("防偷窥模式")
+        heading.setObjectName("SubHeading")
+        outer.addWidget(heading)
+
+        form = QFormLayout()
+        form.setContentsMargins(0, 0, 0, 0)
+        form.setLabelAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        form.setSpacing(6)
+
+        self.stealth_edit = HotkeyEdit(s.stealth_mode_key)
+        self.hotkey_edits["stealth_mode_key"] = self.stealth_edit
+        self.stealth_edit.changed.connect(self._on_hotkeys_changed)
+        form.addRow("快捷键", self.stealth_edit)
+
+        what = QLabel(
+            "按此快捷键可以完全隐藏窗口（真隐藏，不是把透明度降到 0），只有再次按下"
+            "才显示。适合有他人在场时使用。"
+        )
+        what.setObjectName("Muted")
+        what.setWordWrap(True)
+        form.addRow("", what)
+
+        warn = QLabel(
+            "【重要提示】防偷窥模式是临时状态，不会持久化：重启 MiniReader 后默认关闭。"
+            "窗口隐藏后，托盘菜单的「显示窗口」也可以恢复。"
+        )
+        warn.setObjectName("Muted")
+        warn.setWordWrap(True)
+        form.addRow("", warn)
+
+        # 联动提示（红色）。两种情况：没有任何一种"回家路"，或者和老板键撞了键。
+        # 它**故意留在被禁用的那一块之外**（由 _window_group 单独 addRow）：整组变灰
+        # 时 QLabel 会跟着变灰，而这条红字正是变灰的**理由**，灰掉就没人看见理由了。
+        self.stealth_note = QLabel("")
+        self.stealth_note.setObjectName("Warn")
+        self.stealth_note.setWordWrap(True)
+        outer.addLayout(form)
+
+        # 存一份引用：_on_recovery_toggled / _on_hotkeys_changed 要按当前状态整块启停。
+        self.stealth_widget = block
+        return block
+
     def _hotkeys_group(self, s: Settings) -> QGroupBox:
         box = QGroupBox("全局快捷键")
         grid = QGridLayout(box)
         grid.setHorizontalSpacing(10)
         grid.setVerticalSpacing(6)
-        self.hotkey_edits: dict[str, HotkeyEdit] = {}
-        for row, (name, _field, label) in enumerate(HOTKEY_FIELDS):
+        row = 0
+        for name, _field, label in HOTKEY_FIELDS:
+            if name in self.hotkey_edits:
+                # 防偷窥快捷键已经在「窗口」页那个小组里画过了：同一个设置在两页各
+                # 出现一次，改一处另一处不会跟着动，用户会以为其中一个没生效。
+                continue
             edit = HotkeyEdit(getattr(s, name))
             self.hotkey_edits[name] = edit
             grid.addWidget(QLabel(label), row, 0)
             grid.addWidget(edit, row, 1)
             edit.changed.connect(self._on_hotkeys_changed)
+            row += 1
         grid.setColumnStretch(1, 1)
 
         hint = QLabel(
@@ -1069,11 +1147,11 @@ class SettingsDialog(QDialog):
         )
         hint.setObjectName("Muted")
         hint.setWordWrap(True)
-        grid.addWidget(hint, len(HOTKEY_FIELDS), 0, 1, 2)
+        grid.addWidget(hint, row, 0, 1, 2)
 
         self.hotkey_note = QLabel("")
         self.hotkey_note.setObjectName("Warn")
-        grid.addWidget(self.hotkey_note, len(HOTKEY_FIELDS) + 1, 0, 1, 2)
+        grid.addWidget(self.hotkey_note, row + 1, 0, 1, 2)
         return box
 
     # ---- live preview ----------------------------------------------------
@@ -1180,11 +1258,42 @@ class SettingsDialog(QDialog):
             else:
                 seen[chord] = label
         self.hotkey_note.setText("；".join(problems))
+        # 防偷窥那一组有自己的红字：它关心的是"藏了还能不能回来"，不是"有没有重复"。
+        self._update_stealth_note()
         # Blocking OK rather than silently dropping a bad binding on save: clearing a
         # field the user did not mean to clear is worse than making them look at it.
         ok = getattr(self, "_ok_button", None)
         if ok is not None:
             ok.setEnabled(not problems)
+
+    def _on_recovery_toggled(self, _checked: bool = False) -> None:
+        """托盘复选框动了：防偷窥那组的"至少一种恢复方式"结论要跟着重算。"""
+        self._update_stealth_note()
+
+    def _update_stealth_note(self) -> None:
+        """防偷窥小组的联动状态：启停整组 + 红字说明理由。
+
+        规则：托盘、防偷窥快捷键、老板键，三者有其一就够——都是能看见、能按的回家路。
+        一条都没有时整组禁用，因为运行时也会拒绝隐藏（MiniWindow.can_stealth_hide），
+        让界面和实际行为一致，而不是让用户以为配好了。
+
+        整组禁用不会把人困住：托盘复选框在**组外**，把它打开就能回到可用状态。
+        """
+        edit = self.hotkey_edits.get("stealth_mode_key")
+        if edit is None or not hasattr(self, "stealth_widget"):
+            return
+        stealth = edit.spec()
+        boss = self.hotkey_edits["boss_key"].spec()
+        tray = self.tray_check.isChecked()
+        problems = []
+        if not tray and not stealth and not boss:
+            problems.append("至少需要一种恢复方式：打开托盘图标，或给防偷窥模式绑定快捷键")
+        if stealth and boss and format_hotkey(stealth) == format_hotkey(boss):
+            problems.append("防偷窥快捷键与老板键冲突：按下去分不清是要哪一种隐藏")
+        self.stealth_note.setText("；".join(problems))
+        # 没有话要说时它不该占着一行高度（否则小组和「窗口置顶」之间空出一块）。
+        self.stealth_note.setVisible(bool(problems))
+        self.stealth_widget.setEnabled(bool(tray or stealth or boss))
 
     # ---- results ---------------------------------------------------------
 

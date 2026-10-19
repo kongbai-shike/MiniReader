@@ -15,6 +15,7 @@ USAGE = """MiniReader - 悬浮摸鱼阅读器
 
 快捷键（老板键可以在 ⚙ 设置里改）:
     Ctrl+Shift+`   老板键：整个窗口藏起来 / 叫回来
+    Ctrl+Shift+L   防偷窥：彻底隐藏（截图也抓不到）/ 再按一下回来
     托盘图标        左键单击/双击 = 显示窗口，右键 = 菜单（显示/隐藏/设置/退出）
     Esc            窗口有焦点时也能隐身（本地快捷键，不是全局的）
     Ctrl+T         章节目录（再按一次收起）
@@ -158,6 +159,34 @@ def check() -> int:
     return 0
 
 
+def hotkey_actions(window, settings) -> dict[str, object]:
+    """Map each registered hotkey name to the action it performs.
+
+    The keys are **Settings field names** (`HOTKEY_FIELDS` / `settings.hotkeys()`),
+    because `register_all` registers those names verbatim and `HotkeyManager` hands the
+    same string back. A table keyed by friendlier short names ("boss", "next") can never
+    match and the entire global-hotkey feature dies silently - which is precisely the bug
+    this table was introduced to make testable: `test_hotkeys` asserts its keys and
+    `HOTKEY_FIELDS` agree, so renaming a field cannot silently unhook a key again.
+
+    Module-level (rather than a closure in `main`) so that check can run without a GUI.
+    """
+    return {
+        "boss_key": window.toggle_boss,
+        "stealth_mode_key": window.toggle_stealth_mode,
+        "hotkey_next": lambda: window.step_chapter(1),
+        "hotkey_prev": lambda: window.step_chapter(-1),
+        # `settings.opacity` is read when the chord is pressed, not when this table is
+        # built: the user may have dragged the slider since.
+        "hotkey_opacity_up": lambda: window.set_opacity_percent(
+            min(100, settings.opacity + 10)
+        ),
+        "hotkey_opacity_down": lambda: window.set_opacity_percent(
+            max(30, settings.opacity - 10)
+        ),
+    }
+
+
 def main(argv: list[str] | None = None, *, app=None, on_ready=None) -> int:
     """Build and run the GUI.
 
@@ -250,25 +279,36 @@ def main(argv: list[str] | None = None, *, app=None, on_ready=None) -> int:
     if not _rar.remember(settings.unrar_path, settings.unrar_kind):
         _rar.find()
 
+    # 分派表要 window，window 要 manager，manager 要 on_hotkey，而 on_hotkey 要查表——
+    # 四角依赖。先绑一个空表（`on_hotkey` 是闭包，调用时才查 `actions`），等 window
+    # 建好立刻填满。
+    #
+    # 这里踩过一次：第一版把 `hotkey_actions(window, ...)` 写在了 `MiniWindow(...)`
+    # 之前，双击启动直接 UnboundLocalError；而单元测试和手动脚本都是**直接调用**
+    # `hotkey_actions()` 的，谁也没走 `main()`，所以两侧全绿、程序却起不来。
+    # `tests/test_app_launch.py` 就是为这条路径加的。
+    actions: dict[str, object] = {}
+
     def on_hotkey(name: str) -> None:
         """One dispatcher for every global chord.
 
         `HotkeyManager` already coalesces the duplicate WM_HOTKEY that Windows delivers
         for a single press, so this fires exactly once per press.
+
+        Names come from `hotkey_actions`, which is keyed by Settings field names - see
+        the note there about the silently-dead short names this replaced.
         """
-        if name == "boss":
-            window.toggle_boss()
-        elif name == "next":
-            window.step_chapter(1)
-        elif name == "prev":
-            window.step_chapter(-1)
-        elif name == "opacity_up":
-            window.set_opacity_percent(min(100, settings.opacity + 10))
-        elif name == "opacity_down":
-            window.set_opacity_percent(max(30, settings.opacity - 10))
+        action = actions.get(name)
+        if action is None:
+            # Not silent: an unknown name means a registration/dispatch mismatch, and
+            # "the hotkey does nothing" is the hardest kind of bug to report.
+            sys.stderr.write(f"[minireader] 未知的全局热键名：{name}\n")
+            return
+        action()
 
     manager = make_manager(on_hotkey)
     window = MiniWindow(settings, progress, library, hotkeys=manager)
+    actions.update(hotkey_actions(window, settings))
 
     # The tray is created before show() so that a failure to get one is known before
     # the window can be hidden. `make_tray` returns None on a platform without a tray

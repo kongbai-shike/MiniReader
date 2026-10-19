@@ -245,6 +245,10 @@ class Settings:
     hotkey_prev: str = ""
     hotkey_opacity_up: str = ""
     hotkey_opacity_down: str = ""
+    # 防偷窥模式的开关。只有"用哪个组合键"落盘：模式本身是会话状态
+    # （MiniWindow._stealth_mode），和 boss_hidden 一样重启即关——一个重启后仍
+    # 自动隐藏的窗口，在热键注册失败又没有托盘时是找不回来的。
+    stealth_mode_key: str = "Ctrl+Shift+L"
     # session
     last_book: str | None = None
 
@@ -379,6 +383,9 @@ HOTKEY_FIELDS: tuple[tuple[str, str, str], ...] = (
     ("hotkey_prev", "hotkey_prev", "上一章"),
     ("hotkey_opacity_up", "hotkey_opacity_up", "提高不透明度"),
     ("hotkey_opacity_down", "hotkey_opacity_down", "降低不透明度"),
+    # 防偷窥模式的快捷键。放在最后：它属于窗口分组里的那个小组，注册顺序上却
+    # 和老板键同级——两者都是"整窗消失"的入口，谁先谁后都不影响语义。
+    ("stealth_mode_key", "stealth_mode_key", "防偷窥模式（完全隐藏/恢复）"),
 )
 
 _BOOL_FIELDS = (

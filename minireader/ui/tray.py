@@ -25,6 +25,7 @@ from __future__ import annotations
 import os
 
 from ..app_paths import resource_path
+from ..hotkeys import format_hotkey
 from ..qt import (
     QColor,
     QIcon,
@@ -43,6 +44,51 @@ from .theme import PALETTE
 
 OPACITY_PRESETS = (100, 90, 80, 70, 60, 50, 40, 30)
 
+# 防偷窥徽标。只用于"整图变暗还是加红点"这个选择里更可靠的那一个：红点在 16 px 上
+# 仍然是一个能认出来的点，而整图变暗在深色任务栏上和正常图标的区别肉眼几乎为零。
+STEALTH_BADGE = "#e5484d"
+
+# 逐尺寸现画的所有档位：16 是任务栏上真正用到的那个，大档位给托盘菜单/DPI 缩放。
+ICON_SIZES = (16, 24, 32, 48, 64, 128, 256)
+
+
+def _paint_badge(painter, dimension: int) -> None:
+    """右上角一个实心红点，外面一圈描边——描边是深色底上的分隔，不然红点糊成一片。"""
+    dot = dimension * 0.30
+    cx = dimension - dot / 2 - dimension * 0.02
+    cy = dot / 2 + dimension * 0.02
+    painter.setPen(QPen(QColor(PALETTE["bg"]), max(1.0, dimension * 0.04)))
+    painter.setBrush(QColor(STEALTH_BADGE))
+    painter.drawEllipse(int(cx - dot / 2), int(cy - dot / 2), int(dot), int(dot))
+
+
+def make_stealth_icon(base: QIcon | None = None) -> QIcon:
+    """**现有图标 + 红点**，不是"另画一个"。
+
+    这是规格里"正常=现有图标，防偷窥=加红点"的直译：底图原样保留（打包时是随附的
+    .ico，源码树里没有那个文件时退回 `make_icon()` 画的那个），只在右上角补一个点。
+    另画一个整体换色的图标会让托盘在切换瞬间看起来像换了个程序——恰好在用户最需要
+    一眼认出"这就是我那个阅读器"的时候。
+
+    每个尺寸单独取、单独画、单独加：`QIcon.pixmap()` 拿到的是一份拷贝，直接在上面
+    画不会污染正常图标，也不必担心 16 px 下缩放把红点糊掉。
+    """
+    if base is None or base.isNull():
+        base = make_icon()
+    icon = QIcon()
+    for dimension in ICON_SIZES:
+        pixmap = base.pixmap(dimension, dimension)
+        if pixmap.isNull():  # pragma: no cover - 底图异常时用画的那个兜底
+            pixmap = make_icon(dimension).pixmap(dimension, dimension)
+        painter = QPainter(pixmap)
+        try:
+            painter.setRenderHint(QPainter.Antialiasing, True)
+            _paint_badge(painter, dimension)
+        finally:
+            painter.end()
+        icon.addPixmap(pixmap)
+    return icon
+
 
 def make_icon(size: int = 64) -> QIcon:
     """A "page with text lines" glyph, valid on light and dark taskbars.
@@ -50,7 +96,7 @@ def make_icon(size: int = 64) -> QIcon:
     Every size is drawn rather than scaled so the 16 px tray icon keeps crisp lines.
     """
     icon = QIcon()
-    for dimension in (16, 24, 32, 48, 64, 128, 256):
+    for dimension in ICON_SIZES:
         pixmap = QPixmap(dimension, dimension)
         pixmap.fill(Qt.transparent)
         painter = QPainter(pixmap)
@@ -125,7 +171,14 @@ class TrayIcon(QSystemTrayIcon):
     opacityRequested = Signal(int)
 
     def __init__(self, parent=None, *, title: str = "MiniReader") -> None:
-        super().__init__(load_tray_icon(), parent)
+        # 两套图标都留在实例上：正常态是现有图标（打包时随附的 .ico，和 exe 图标一致），
+        # 防偷窥态是**同一张图 + 右上角红点**。后者在构造时算一次：切换模式发生在隐藏
+        # 窗口的那一瞬间，不该在那时才去画 7 个尺寸的位图。
+        self._normal_icon = load_tray_icon()
+        self._stealth_icon = make_stealth_icon(self._normal_icon)
+        super().__init__(self._normal_icon, parent)
+        self._title = title or "MiniReader"
+        self._stealth = False
         self._hidden = False
         self._opacity = 100
         # Held on the instance: see the module docstring.
@@ -150,8 +203,33 @@ class TrayIcon(QSystemTrayIcon):
     # ---- state -----------------------------------------------------------
 
     def set_title(self, title: str) -> None:
-        """The tooltip. Follows the disguise title, so hovering cannot give it away."""
-        self.setToolTip(title or "MiniReader")
+        """The tooltip. Follows the disguise title, so hovering cannot give it away.
+
+        While 防偷窥模式 is on the tooltip carries the unlock hint instead (see
+        `set_stealth_state`). The new title is still remembered, so leaving the mode
+        puts the disguise title straight back.
+        """
+        self._title = title or "MiniReader"
+        if not self._stealth:
+            self.setToolTip(self._title)
+
+    def set_stealth_state(self, on: bool, spec: str = "") -> None:
+        """The tray's half of 防偷窥模式: a red badge and a tooltip that says how out.
+
+        The tooltip is the only hoverable surface left once the window is hidden, so it
+        is where the chord has to be repeated - a user who hid the window and forgot the
+        combination can still find it by hovering the tray icon.
+        """
+        self._stealth = bool(on)
+        if self._stealth:
+            self.setIcon(self._stealth_icon)
+            chord = format_hotkey(spec) if spec else ""
+            self.setToolTip(
+                f"防偷窥模式已开启，按 {chord} 解锁" if chord else "防偷窥模式已开启"
+            )
+        else:
+            self.setIcon(self._normal_icon)
+            self.setToolTip(self._title)
 
     def set_hidden_state(self, hidden: bool) -> None:
         """Keep the two explicit actions in step with what is actually on screen.
