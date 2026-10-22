@@ -199,5 +199,65 @@ class TestOnARealDesktop(unittest.TestCase):
             widget.deleteLater()
 
 
+class TestKeyPolling(unittest.TestCase):
+    """隐私模式的唤醒键：GetAsyncKeyState 只观察，不注册，也不许抛异常。"""
+
+    def setUp(self) -> None:
+        self._saved_poll = win32._get_async_key_state
+        self._saved_windows = win32.IS_WINDOWS
+
+    def tearDown(self) -> None:
+        win32._get_async_key_state = self._saved_poll
+        win32.IS_WINDOWS = self._saved_windows
+
+    def _stub(self, value) -> None:
+        win32._get_async_key_state = lambda vk: value
+
+    def test_off_windows_it_is_false_and_does_not_raise(self) -> None:
+        win32.IS_WINDOWS = False
+        self.assertFalse(win32.is_key_down(0x11))
+        self.assertFalse(win32.keys_all_down([0x11]))
+
+    def test_only_the_high_bit_means_held_down(self) -> None:
+        """低位是"上次调用之后按过"，拿它判定会把一次点击当成一直按着。"""
+        self._stub(0x0001)
+        self.assertFalse(win32.is_key_down(0x11))
+        self._stub(0x8000)
+        self.assertTrue(win32.is_key_down(0x11))
+        self._stub(0x8001)
+        self.assertTrue(win32.is_key_down(0x11))
+
+    def test_no_keys_at_all_is_false(self) -> None:
+        """all([]) 是 True：空唤醒键若返回 True，窗口会对着所有人大开。"""
+        self.assertFalse(win32.keys_all_down([]))
+        self.assertFalse(win32.keys_all_down(None))
+        self.assertFalse(win32.keys_all_down(()))
+
+    def test_all_means_all(self) -> None:
+        down: set[int] = set()
+        win32._get_async_key_state = lambda vk: 0x8000 if vk in down else 0
+        self.assertFalse(win32.keys_all_down([0x11, 0x10]))
+        down.add(0x11)
+        self.assertFalse(win32.keys_all_down([0x11, 0x10]))
+        down.add(0x10)
+        self.assertTrue(win32.keys_all_down([0x11, 0x10]))
+
+    def test_a_failing_win32_call_is_a_false(self) -> None:
+        def boom(_vk):
+            raise OSError("user32 went away")
+
+        win32._get_async_key_state = boom
+        self.assertFalse(win32.is_key_down(0x11))
+        self.assertFalse(win32.keys_all_down([0x11]))
+
+    def test_hostile_codes_never_raise(self) -> None:
+        for vk in HOSTILE:
+            with self.subTest(vk=repr(vk)[:20]):
+                self.assertIn(win32.is_key_down(vk), (True, False))
+        for vks in ([None], ["x"], [object()], [2 ** 40], [0.5], 42, "ab"):
+            with self.subTest(vks=repr(vks)[:20]):
+                self.assertIn(win32.keys_all_down(vks), (True, False))
+
+
 if __name__ == "__main__":
     unittest.main()

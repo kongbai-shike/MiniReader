@@ -27,6 +27,7 @@ from minireader.storage import (  # noqa: E402
     HOTKEY_FIELDS,
     Library,
     ProgressStore,
+    WAKE_FIELDS,
     Settings,
     alpha_to_percent,
     data_dir,
@@ -528,20 +529,43 @@ class TestHotkeyFields(SandboxedAppData):
         self.assertIsNot(back.stealth_mode_key, None)
 
     def test_the_stealth_mode_itself_has_no_persisted_field(self) -> None:
-        """Only the chord is a preference; "am I hiding right now" is session state.
+        """Only the chords are preferences; "am I hiding right now" is session state.
 
         A persisted `stealth_mode: true` would make the next launch start with a hidden
         window - unrecoverable on a machine where the chord failed to register and the
         tray is off. The mode lives in a MiniWindow instance variable instead.
+
+        隐私模式带来第二个以 stealth 开头的落盘字段 `stealth_wake_key`，它同样是
+        "用哪组键"而不是"现在藏没藏"，所以白名单里放行这两项，其余照旧不许出现。
         """
         self.assertEqual(Settings().stealth_mode_key, "Ctrl+Shift+L")
+        self.assertEqual(Settings().stealth_wake_key, "Ctrl+Shift")
         self.assertNotIn("stealth_mode", DEFAULT_SETTINGS, "模式本身不许有字段")
+        chords = {"stealth_mode_key", "stealth_wake_key"}
         for name in DEFAULT_SETTINGS:
-            if name == "stealth_mode_key":
-                continue        # 唯一该落盘的东西：用哪个组合键
+            if name in chords:
+                continue        # 唯一该落盘的东西：用哪组键
             with self.subTest(name=name):
                 self.assertNotIn("stealth", name)
                 self.assertNotIn("hidden", name)
+
+    def test_the_wake_key_round_trips(self) -> None:
+        settings = Settings(stealth_wake_key="Ctrl+Alt")
+        settings.save()
+        back = Settings.load()
+        self.assertEqual(back.stealth_wake_key, "Ctrl+Alt")
+
+    def test_the_wake_key_is_never_registered_as_a_hotkey(self) -> None:
+        """轮询键不能混进 hotkeys()：那份 dict 正是 register_all 的输入，注册一个
+        Ctrl+Shift 会被系统拒绝，注册一个普通键则会抢走全系统的输入。"""
+        settings = Settings(stealth_wake_key="F8")
+        self.assertNotIn("stealth_wake_key", settings.hotkeys())
+        self.assertIn("stealth_wake_key", {name for name, _label in WAKE_FIELDS})
+
+    def test_a_non_string_wake_key_becomes_empty(self) -> None:
+        settings = Settings(stealth_wake_key=123)
+        settings.clamp()
+        self.assertEqual(settings.stealth_wake_key, "")
 
     def test_snap_distance_is_clamped(self) -> None:
         """Capped at 60 px: a larger pull stops reading as "snapping" and starts reading

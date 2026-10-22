@@ -29,7 +29,8 @@ from __future__ import annotations
 import ctypes
 import sys
 from ctypes import wintypes
-from typing import Callable
+from dataclasses import dataclass
+from typing import Callable, Mapping
 
 from .qt import QAbstractNativeEventFilter, QElapsedTimer, QTimer, native_platform_available
 
@@ -145,6 +146,147 @@ def format_hotkey(spec: str) -> str:
             out.append(label)
     out.append(_VK_LABELS.get(vk, hex(vk)))
     return "+".join(out)
+
+
+#: Pure-modifier virtual-key codes. GetAsyncKeyState answers the *generic* code
+#: (VK_CONTROL 0x11, VK_SHIFT 0x10) with the high bit set when **either** physical side
+#: is down, so left Ctrl and right Ctrl need no special case.
+_MOD_VKS: dict[str, int] = {
+    "ctrl": 0x11, "control": 0x11,
+    "alt": 0x12,
+    "shift": 0x10,
+    "win": 0x5B, "super": 0x5B, "meta": 0x5B, "cmd": 0x5B,
+}
+
+
+def parse_to_vks(spec: str) -> list[int]:
+    """'Ctrl+Shift' -> [0x11, 0x10]: the keys to *poll*, not a chord to register.
+
+    Two differences from parse_hotkey, both on purpose:
+
+    * **A pure modifier chord is allowed.** 隐私模式's shipped wake key is 'Ctrl+Shift',
+      which parse_hotkey refuses (「单独一个按键会抢走全系统的输入」) because it exists to
+      feed RegisterHotKey. Nothing is registered here, so that rule does not apply.
+    * A bare key is allowed too ('F8' -> [0x77]): polling for one key steals nothing
+      from other programs, it only *observes*.
+
+    An empty spec returns an empty list - 「没设唤醒键」, which the caller turns into
+    「永不显现」. Raises HotkeyError for a genuinely unparseable token; the window guards
+    that one call so a corrupt settings.json cannot take the window down.
+    """
+    parts = [p.strip() for p in str(spec or "").split("+") if p.strip()]
+    vks: list[int] = []
+    for part in parts:
+        low = part.lower()
+        if low in _MOD_VKS:
+            vks.append(_MOD_VKS[low])
+            continue
+        if low not in _VK_NAMES:
+            raise HotkeyError(f"不支持的按键：{low}")
+        vks.append(_VK_NAMES[low])
+    return vks
+
+
+@dataclass(frozen=True)
+class Conflict:
+    """两个字段抢同一组按键。
+
+    names are the Settings field names ('boss_key', 'stealth_wake_key', ...) so the caller
+    can highlight exactly those rows; message is the sentence to show.
+    """
+
+    names: tuple[str, str]
+    specs: tuple[str, str]
+    message: str
+
+
+def _chord(spec: str) -> tuple[frozenset[int], int] | None:
+    """(modifier bits, virtual-key). 0 means modifier-only. None = unparseable."""
+    parts = [p.strip() for p in str(spec or "").split("+") if p.strip()]
+    if not parts:
+        return None
+    mods: set[int] = set()
+    key = 0
+    for part in parts:
+        low = part.lower()
+        if low in _MOD_NAMES:
+            mods.add(_MOD_NAMES[low])
+            continue
+        if low not in _VK_NAMES or key:
+            return None
+        key = _VK_NAMES[low]
+    return frozenset(mods), key
+
+
+def find_conflicts(
+    changed,
+    all_keys: Mapping[str, str],
+    labels: Mapping[str, str] | None = None,
+) -> list[Conflict]:
+    """Inner de-dup before saving: which of the *changed* bindings collide with anything.
+
+    Deliberately internal. It never asks Windows whether another program already owns a
+    chord: that needs a real RegisterHotKey, which fails for reasons the user cannot act
+    on inside this dialog. System occupancy keeps its existing path - a failed
+    registration reported afterwards through update_boss_capability.
+
+    A collision here means exactly "two fields end up on the same chord", nothing
+    cleverer:
+
+    * Only entries in *changed* can start one. A pairing that was already there when the
+      dialog opened is the user's existing arrangement, not this edit's business - and
+      rolling it back would silently undo something they never touched.
+
+    * A modifier-only wake key (Ctrl+Shift) overlapping a longer chord (Ctrl+Shift+`) is
+      **not** a conflict, even though one press satisfies both. It is the shipped default
+      and it is harmless: the wake key is polled only while the privacy window is hidden,
+      and pressing the boss key leaves the privacy mode outright (see
+      MiniWindow.toggle_boss), which stops the polling before it can show anything.
+      Treating it as a conflict would make 恢复默认 + 确定 impossible to save.
+
+    * Empty and unparseable specs are skipped: an unbound key cannot collide, and a
+      malformed one is the editor's business (it already blocks 确定).
+
+    changed is either a mapping of {field name: new spec} or an iterable of field names
+    to look up in all_keys.
+    """
+    if isinstance(changed, Mapping):
+        names = list(changed.keys())
+        lookup = dict(all_keys)
+        lookup.update({name: changed[name] for name in names})
+    else:
+        names = [str(name) for name in (changed or ())]
+        lookup = dict(all_keys)
+    label_of = dict(labels or {})
+
+    parsed: dict[str, tuple[frozenset[int], int]] = {}
+    for name, spec in lookup.items():
+        chord = _chord(spec)
+        if chord is not None:
+            parsed[name] = chord
+
+    def label(name: str) -> str:
+        return label_of.get(name) or name
+
+    found: list[Conflict] = []
+    seen: set[frozenset[str]] = set()
+    for name in names:
+        if name not in parsed:
+            continue
+        for other, chord in parsed.items():
+            if other == name:
+                continue
+            pair = frozenset((name, other))
+            if pair in seen or parsed[name] != chord:
+                continue
+            seen.add(pair)
+            spec_a = format_hotkey(str(lookup.get(name, "")))
+            spec_b = format_hotkey(str(lookup.get(other, "")))
+            message = f"「{label(name)}」和「{label(other)}」用了同一个组合键 {spec_a}"
+            found.append(
+                Conflict(names=(name, other), specs=(spec_a, spec_b), message=message)
+            )
+    return found
 
 
 def _describe_error(code: int) -> str:

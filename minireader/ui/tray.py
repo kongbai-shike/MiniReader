@@ -213,20 +213,29 @@ class TrayIcon(QSystemTrayIcon):
         if not self._stealth:
             self.setToolTip(self._title)
 
-    def set_stealth_state(self, on: bool, spec: str = "") -> None:
-        """The tray's half of 防偷窥模式: a red badge and a tooltip that says how out.
+    def set_stealth_state(self, on: bool, spec: str = "", wake: str = "") -> None:
+        """The tray's half of 隐私模式: a red badge and a tooltip that says how in and out.
 
-        The tooltip is the only hoverable surface left once the window is hidden, so it
-        is where the chord has to be repeated - a user who hid the window and forgot the
-        combination can still find it by hovering the tray icon.
+        Once the window is hidden the tray icon is the only hoverable surface left, so its
+        tooltip has to carry both halves of the ritual: the wake key that brings the window
+        back (hold it, then move the mouse in) *and* the chord that leaves the mode. A user
+        who forgot either can still find it by hovering the icon.
         """
         self._stealth = bool(on)
         if self._stealth:
             self.setIcon(self._stealth_icon)
             chord = format_hotkey(spec) if spec else ""
-            self.setToolTip(
-                f"防偷窥模式已开启，按 {chord} 解锁" if chord else "防偷窥模式已开启"
-            )
+            # 唤醒键可以是纯修饰键（默认 Ctrl+Shift），format_hotkey 对它原样返回。
+            wake_label = format_hotkey(wake) if wake else ""
+            if wake_label:
+                text = f"隐私模式：按住 {wake_label} 并移入窗口查看"
+                if chord:
+                    text += f"（按 {chord} 退出）"
+            elif chord:
+                text = f"隐私模式已开启（未设置唤醒键）：按 {chord} 退出"
+            else:
+                text = "隐私模式已开启（未设置唤醒键）"
+            self.setToolTip(text)
         else:
             self.setIcon(self._normal_icon)
             self.setToolTip(self._title)

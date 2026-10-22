@@ -114,6 +114,9 @@ EXTRAS: dict[str, dict[str, str]] = {
         # 滚动条。深色下用白色 rgba 提亮；白昼必须反过来，否则白底上看不见。
         "scrollbar_handle": "rgba(255,255,255,0.18)",
         "scrollbar_handle_hover": "rgba(255,255,255,0.30)",
+        # 设置页「键位已保存」的绿字。语义上是"成功"，但它只出现在这一个地方，所以
+        # 进 EXTRAS 而不是给 11 键的 PALETTE 加第 12 个键。7.7:1 on panel。
+        "saved_fg": "#6fbf6f",
     },
     "light": {
         "menu_bg": "#ffffff",
@@ -142,6 +145,8 @@ EXTRAS: dict[str, dict[str, str]] = {
         "primary_disabled_fg": "#8e8e96",
         "scrollbar_handle": "rgba(0,0,0,0.18)",
         "scrollbar_handle_hover": "rgba(0,0,0,0.30)",
+        # 白昼必须压深：同一个绿在 #f7f7f8 上是 1.9:1，等于看不见。6.1:1 on panel。
+        "saved_fg": "#1a6b32",
     },
 }
 

@@ -15,10 +15,13 @@ import unittest
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from minireader.hotkeys import (  # noqa: E402
+    Conflict,
     HotkeyError,
     NullHotkeys,
+    find_conflicts,
     format_hotkey,
     parse_hotkey,
+    parse_to_vks,
     register_all,
     spec_from_qt,
 )
@@ -271,6 +274,99 @@ class TestRegisterAll(unittest.TestCase):
         """`NullHotkeys` has the same two methods, so the same code path serves both."""
         results = register_all(NullHotkeys(lambda name: None), {"boss_key": "Ctrl+Shift+`"}, hwnd=0)
         self.assertIn("boss_key", results)
+
+
+class TestParseToVks(unittest.TestCase):
+    """唤醒键是**轮询**的，不是注册的 —— 所以它允许纯修饰键。
+
+    parse_hotkey 存在的目的是喂 RegisterHotKey，纯修饰键会被它拒掉（"会抢走全系统的
+    输入"）；轮询只观察、不占用，那条规则不适用。这两个函数的分工就是本组测试。
+    """
+
+    def test_a_pure_modifier_chord_parses(self) -> None:
+        self.assertEqual(parse_to_vks("Ctrl+Shift"), [0x11, 0x10])
+
+    def test_a_bare_key_parses(self) -> None:
+        self.assertEqual(parse_to_vks("F8"), [0x77])
+
+    def test_the_usual_chord_uses_the_same_key_table(self) -> None:
+        self.assertEqual(parse_to_vks("Ctrl+`"), [0x11, 0xC0])
+
+    def test_empty_means_no_wake_key(self) -> None:
+        self.assertEqual(parse_to_vks(""), [])
+        self.assertEqual(parse_to_vks("   "), [])
+        self.assertEqual(parse_to_vks(None), [])
+
+    def test_whitespace_and_case_do_not_matter(self) -> None:
+        self.assertEqual(parse_to_vks(" ctrl + SHIFT "), [0x11, 0x10])
+
+    def test_an_unknown_token_still_raises(self) -> None:
+        with self.assertRaises(HotkeyError) as ctx:
+            parse_to_vks("Ctrl+Banana")
+        self.assertIn("banana", str(ctx.exception).lower())
+
+
+class TestFindConflicts(unittest.TestCase):
+    """内部去重：只回答"这次改动的键里有没有两个落在同一个组合键上"。"""
+
+    def test_a_collision_between_the_wake_key_and_a_registered_chord(self) -> None:
+        keys = {"stealth_wake_key": "Ctrl+Shift+L", "stealth_mode_key": "Ctrl+Shift+L"}
+        conflicts = find_conflicts(
+            ["stealth_wake_key"],
+            keys,
+            {"stealth_wake_key": "唤醒键", "stealth_mode_key": "隐私模式"},
+        )
+        self.assertEqual(len(conflicts), 1)
+        self.assertEqual(conflicts[0].names, ("stealth_wake_key", "stealth_mode_key"))
+        self.assertEqual(conflicts[0].specs, ("Ctrl+Shift+L", "Ctrl+Shift+L"))
+        self.assertIn("唤醒键", conflicts[0].message)
+        self.assertIn("隐私模式", conflicts[0].message)
+        self.assertIn("同一个组合键", conflicts[0].message)
+
+    def test_the_shipped_default_wake_key_is_not_a_conflict(self) -> None:
+        """Ctrl+Shift 是 Ctrl+Shift+` 的前半段，但这是出厂配置：按"重复"处理会让
+        恢复默认 + 确定永远存不下去。轮询只在窗口藏着时进行，老板键又会先退出隐私模式。"""
+        keys = {
+            "stealth_wake_key": "Ctrl+Shift",
+            "boss_key": "Ctrl+Shift+`",
+            "stealth_mode_key": "Ctrl+Shift+L",
+        }
+        self.assertEqual(find_conflicts(["stealth_wake_key"], keys), [])
+
+    def test_only_a_changed_name_can_start_a_conflict(self) -> None:
+        keys = {"a": "Ctrl+A", "b": "Ctrl+A"}
+        self.assertEqual(find_conflicts([], keys), [])
+        self.assertEqual(find_conflicts(["c"], {**keys, "c": "Ctrl+B"}), [])
+
+    def test_a_pair_is_reported_once_even_when_both_sides_changed(self) -> None:
+        keys = {"a": "Ctrl+A", "b": "Ctrl+A"}
+        conflicts = find_conflicts({"a": "Ctrl+A", "b": "Ctrl+A"}, keys)
+        self.assertEqual(len(conflicts), 1)
+
+    def test_changed_may_be_a_mapping_of_new_specs(self) -> None:
+        keys = {"a": "Ctrl+A", "b": "Ctrl+B"}
+        conflicts = find_conflicts({"b": "Ctrl+A"}, keys)
+        self.assertEqual(len(conflicts), 1)
+        self.assertEqual(conflicts[0].names, ("b", "a"))
+
+    def test_the_same_key_with_different_modifiers_is_not_a_conflict(self) -> None:
+        keys = {"a": "Ctrl+A", "b": "Ctrl+Shift+A"}
+        self.assertEqual(find_conflicts(["a", "b"], keys), [])
+
+    def test_empty_and_broken_specs_are_skipped(self) -> None:
+        keys = {"a": "", "b": "Banana", "c": "Ctrl+A"}
+        self.assertEqual(find_conflicts(["a", "b"], keys), [])
+        # 空的那一行不该把和它无关的 c 也拖进来。
+        self.assertEqual(find_conflicts(["a"], keys), [])
+
+    def test_labels_fall_back_to_field_names(self) -> None:
+        conflicts = find_conflicts(["x"], {"x": "Ctrl+A", "y": "Ctrl+A"})
+        self.assertIn("「x」", conflicts[0].message)
+        self.assertIn("「y」", conflicts[0].message)
+
+    def test_the_result_is_a_conflict_dataclass(self) -> None:
+        conflict = find_conflicts(["x"], {"x": "Ctrl+A", "y": "Ctrl+A"})[0]
+        self.assertIsInstance(conflict, Conflict)
 
 
 class _StubWindow:

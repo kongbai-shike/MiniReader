@@ -68,7 +68,12 @@ from ..core.opener import (
     open_book_kind,
     pdf_choice,
 )
-from ..hotkeys import format_hotkey, register_all
+from ..hotkeys import (
+    HotkeyError,
+    format_hotkey,
+    parse_to_vks,
+    register_all,
+)
 from ..qt import (
     EDGE_BOTTOM,
     EDGE_LEFT,
@@ -168,6 +173,11 @@ LEAVE_HIDE_DELAY_MS = 100
 # WA_TranslucentBackground 的本窗组合上实测：alpha=0 必穿透，0.005/0.01/0.02/0.05 都能
 # 正常命中并触发 enter。0.01 肉眼全透但保留命中测试，是隐身下限。
 LEAVE_HIDE_OPACITY = 0.01
+# 隐私模式的轮询周期（毫秒）。50ms 是「感觉到是即时的」和「别把 CPU 烧掉」之间的折中：
+# 一次 tick 只做几件事（两个 GetAsyncKeyState + 一次光标命中和矩形比较），代价约等于
+# 一次空闲事件循环的回调。**不能改成事件驱动**——窗口 hide() 之后根本没有 enterEvent，
+# 鼠标进出只能靠轮询自己发现。
+STEALTH_POLL_MS = 50
 
 # 阶段 3：正文右键菜单的实测规格（QQ 迷你窗 04_context_menu_user.png）：
 # 底 #2b2b2b、字 #bdbdc0、项高 40px、圆角 6-8px、分隔线/悬停都是 #3a3a3a，
@@ -213,6 +223,19 @@ QMenu::icon {{ left: 0; width: 0; }}
 
 
 HOTKEY_LABELS = {name: label for name, _field, label in HOTKEY_FIELDS}
+
+
+def _wake_key_codes(spec: str) -> list[int]:
+    """唤醒键 -> 要用 GetAsyncKeyState 轮询的虚拟键码。
+
+    空字符串和看不懂的写法都返回空表——两者的语义都是「没有唤醒键」，于是隐私模式
+    进得去但永不显现（托盘/老板键还能把窗口叫回来）。宁可叫不醒，也不能因为一个
+    手改坏的 settings.json 让窗口在自己弹出来。
+    """
+    try:
+        return parse_to_vks(spec)
+    except HotkeyError:
+        return []
 
 
 def _qss() -> str:
@@ -635,6 +658,21 @@ class MiniWindow(QWidget):
         # 防偷窥快捷键自己是否注册成功。和 _boss_available 分开记：两者是两条独立的
         # 回家路，托盘在时任何一条都够用，所以不能用老板键的结果去顶替。
         self._stealth_available = False
+        # ---- 隐私模式的状态机（全部是会话状态，不落盘）------------------
+        # _stealth_rect   进入那一刻的窗口矩形（Qt 逻辑坐标）。隐藏之后用户不可能
+        #                 再移动窗口，所以不需要动态更新。
+        # _wake_codes     唤醒键对应的虚拟键码，进入时解析一次；空表 = 永不显现。
+        # _wake_armed     纯修饰键的时序坑：进模式的那一下 Ctrl+Shift 还按着，若立刻
+        #                 允许「按住就显现」，窗口会在按 L 的同一个瞬间弹回来。必须先
+        #                 观察到一个「全部松开」的时刻才上膛。
+        # _stealth_awake  窗口此刻是「被唤醒显示」的（而不是用户点托盘叫回来的）。
+        self._stealth_rect = QRect()
+        self._wake_codes: list[int] = []
+        self._wake_armed = False
+        self._stealth_awake = False
+        self._stealth_timer = QTimer(self)
+        self._stealth_timer.setInterval(STEALTH_POLL_MS)
+        self._stealth_timer.timeout.connect(self._stealth_tick)
         self._drag_origin = None
         self._quit_on_close = True
         # 只有托盘菜单的"退出"（或应用外壳的 real_quit）会把它置 True。✕ 和老板键都只
@@ -1739,9 +1777,15 @@ class MiniWindow(QWidget):
         # 从"打开前"这个值切回去，而不是从 self.settings.theme 读——那个字段在预览
         # 期间已经被写成预览值了（见 _preview_theme）。
         self._theme_before_dialog = theme.CURRENT
+        # 「确定」不再关窗（SettingsDialog.accept 只保存、不退出，见它的文档字符串），
+        # 所以"关闭之后再写回"这条老路已经来不及：信号一到就当场写回 + 落盘 + 生效。
+        # 用户接着改下一项也不会丢，最终关窗时 saved_ok 会再走一遍同样的写回（幂等）。
+        saved = getattr(dialog, "saved", None)
+        if saved is not None:
+            saved.connect(lambda: self._commit_dialog_settings(dialog))
         self.refresh_opacity()
         try:
-            accepted = exec_dialog(dialog)
+            accepted = bool(exec_dialog(dialog) or getattr(dialog, "saved_ok", False))
         finally:
             self._dialog_open = False
             self._settings_dialog = None
@@ -1764,6 +1808,17 @@ class MiniWindow(QWidget):
             self.apply_theme(self._theme_before_dialog, persist=False)
         dialog.deleteLater()
         self.refresh_opacity()
+
+    def _commit_dialog_settings(self, dialog) -> None:
+        """设置页「确定」按下时立刻生效并落盘——此时对话框还开着。
+
+        和 open_settings 的 accepted 分支做同一件事，故意不改成一处调用另一处：
+        那里还要处理"对话框关掉之后"的收尾（deleteLater / refresh_opacity），这里
+        只负责"保存"这一件事，混在一起会让取消路径也跑进去。
+        """
+        self.settings = dialog.apply_to(self.settings)
+        self.settings.save(self._settings_path)
+        self.apply_preferences()
 
     def _preview_theme(self, name: str) -> None:
         """设置页下拉的实时预览：立即切换外观，但**不**写盘。
@@ -1895,7 +1950,11 @@ class MiniWindow(QWidget):
         tray.set_opacity(self.settings.opacity)
         tray.set_title(self.window_title())
         # 托盘换得比模式晚到（设置里刚打开托盘）：新图标必须立刻带上当前的红点/提示。
-        tray.set_stealth_state(self._stealth_mode, self.settings.stealth_mode_key)
+        tray.set_stealth_state(
+            self._stealth_mode,
+            self.settings.stealth_mode_key,
+            self.settings.stealth_wake_key,
+        )
         self.update_boss_capability()
 
     def quit_app(self) -> None:
@@ -2865,10 +2924,13 @@ class MiniWindow(QWidget):
         """
         self._cancel_leave_hide()
         self._restore_opacity_if_hidden()
-        # 防偷窥模式被别的路径叫醒（托盘"显示窗口"、第二个实例、双击任务栏）：模式
+        # 隐私模式被别的路径叫醒（托盘"显示窗口"、第二个实例、双击任务栏）：模式
         # 必须跟着退，否则托盘图标会红着、提示还写着"按 X 解锁"，可窗口明明在眼前。
+        # 50ms 轮询也要一起停：留着它只会在下一次 tick 里按一根已经松开（或又按下）
+        # 的唤醒键把窗口再藏起来，用户会觉得"点了显示窗口却自己消失了"。
         if self._stealth_mode:
             self._stealth_mode = False
+            self._stop_stealth_polling()
             self._update_tray_stealth_indicator(False)
         self.boss_hidden = False
         if self.isMinimized():
@@ -2892,10 +2954,21 @@ class MiniWindow(QWidget):
         return bool(self._boss_available or self.tray is not None)
 
     def toggle_boss(self) -> None:
-        # 防偷窥模式下老板键就是"解锁"：用户按的是同一条回家路。不这么写的话，下面
-        # 的 boss_hidden==False 分支会把一个真隐藏的窗口再 hide() 一次（并记错账）。
+        # 隐私模式与老板键模式互斥（三态：一般 / 老板键 / 隐私）。在隐私模式里按老板
+        # 键 = 先干净地退出隐私，再按老板键的本义切换——两者都是"整窗消失"，但记账
+        # 必须落在正确的那个模式下，否则下一次按老板键会从"已隐藏"开始算。
+        # 刻意不经过 _leave_stealth_mode()：它会 show() 一下再 hide()，中间那一帧是白
+        # 送的泄露。
         if self._stealth_mode:
-            self._leave_stealth_mode()
+            self._stealth_mode = False
+            self._stop_stealth_polling()
+            self._update_tray_stealth_indicator(False)
+            if self.can_hide():
+                self.hide_to_boss()
+            else:
+                # 没有任何隐藏手段：把窗口显示回来，否则它就真的丢了。
+                self._leave_stealth_mode()
+                self.set_warning("热键和托盘都不可用，已阻止隐藏（否则窗口找不回来）")
             return
         if self.boss_hidden:
             self.show_from_boss()
@@ -2905,10 +2978,11 @@ class MiniWindow(QWidget):
             self.set_warning("热键和托盘都不可用，已阻止隐藏（否则窗口找不回来）")
 
     def hide_to_boss(self) -> None:
-        # 托盘"隐藏窗口"走的是这条路径。目标状态是"藏起来"，所以模式静默退出而不是
-        # 走 _leave_stealth_mode()——那会把窗口 show() 出来。
+        # 托盘"隐藏窗口"走的是这条路径。目标状态是"藏起来"，所以隐私模式静默退出而
+        # 不是走 _leave_stealth_mode()——那会把窗口 show() 出来。
         if self._stealth_mode:
             self._stealth_mode = False
+            self._stop_stealth_polling()
             self._update_tray_stealth_indicator(False)
         self.boss_hidden = True
         # 待执行的降透明度要撤销：窗口马上就 hide() 了，再降一次 0 只会留下脏状态。
@@ -2934,47 +3008,73 @@ class MiniWindow(QWidget):
         self._opacity_before_hide = None
         self.refresh_opacity()
 
-    # ---- stealth mode (防偷窥) -------------------------------------------
+    # ---- privacy mode (隐私模式 / stealth) -------------------------------
 
     def toggle_stealth_mode(self) -> None:
-        """防偷窥模式开关。进入时 hide()，退出时 show() + 恢复 opacity。
+        """隐私模式开关：进入时 hide() + 起轮询，退出时 show() + 恢复 opacity。
 
         和老板键、移出隐身的区别是**目的**而不是机制：老板键是"我自己要离开一下"，
         移出隐身是"路过的人看一眼也无所谓"，这个模式是"同事就站在旁边"——所以它必须
         用 hide()，不可能是 opacity=0.01：截图工具能把半透明窗口的内容原样抓下来，
         某些对比度下轮廓也还看得见。hide() 藏的是窗口本身，不是它的样子。
 
-        边界：窗口已经被老板键藏起来了（isVisible() 为假）而模式没开——这时按这个键
-        是个歧义指令，静默忽略。显示它等于绕过老板键的意图（用户按的是另一个键）。
+        与老板键模式互斥（边角决策 4）：在老板键模式里按这个键 = 先干净退出老板键，
+        再进隐私模式。中间不 show()——两种"藏起来"之间的切换不该闪一帧窗口。
         """
         if self._stealth_mode:
             self._leave_stealth_mode()
-        elif self.isVisible():
-            self._enter_stealth_mode()
-        # else: 已被老板键藏起来，静默忽略
+            return
+        if self.boss_hidden:
+            self.boss_hidden = False
+            self._cancel_leave_hide()
+            self._opacity_before_hide = None
+            if self.tray is not None:
+                self.tray.set_hidden_state(False)
+        elif not self.isVisible():
+            # 既不显示、又不在老板键模式下：窗口是别的路径藏起来的，这个键的语义不清
+            # （用户要的是"藏"还是"叫回来"？），静默忽略，与旧行为一致。
+            return
+        self._enter_stealth_mode()
 
     def can_stealth_hide(self) -> bool:
-        """防偷窥模式也遵守"至少一种恢复方式"：快捷键、老板键、托盘，有一个就够。"""
+        """隐私模式也遵守"至少一种恢复方式"：快捷键、老板键、托盘，有一个就够。"""
         return bool(
             self._stealth_available or self._boss_available or self.tray is not None
         )
 
     def _enter_stealth_mode(self) -> None:
+        """进入隐私模式：真 hide()、记住矩形、起 50ms 轮询。"""
         if not self.can_stealth_hide():
-            self.set_warning("防偷窥快捷键和托盘都不可用，已阻止隐藏（否则窗口找不回来）")
+            self.set_warning("隐私模式快捷键和托盘都不可用，已阻止隐藏（否则窗口找不回来）")
             return
         self._stealth_mode = True
         # 待执行的移出隐身要撤掉：窗口马上 hide()，计时器到点还会再改一次不透明度，
         # 在窗口下次出现时留下一个 1% 的脏底。
         self._cancel_leave_hide()
         self._opacity_before_hide = None
+        # 矩形必须在 hide() 之前取：这是"用户进入时看到的窗口"的位置，也正是鼠标
+        # 该被判定在里面的那块地方。
+        self._stealth_rect = QRect(self.geometry())
+        self._wake_codes = _wake_key_codes(self.settings.stealth_wake_key)
+        # 冷却：进模式的这一下 Ctrl+Shift 还按着（用户刚按完 Ctrl+Shift+L）。此刻若就
+        # 允许"按住即显现"，第一次轮询会让窗口在同一个按键序列里弹回来，隐私模式等于
+        # 没生效。上膛留给 tick 里"见到一次全部松开"。
+        self._wake_armed = False
+        self._stealth_awake = False
         self.hide()
+        self._stealth_timer.start()
         if self.tray is not None:
             self.tray.set_hidden_state(True)
         self._update_tray_stealth_indicator(True)
 
     def _leave_stealth_mode(self) -> None:
+        """退出隐私模式：停轮询、清状态、把窗口显示回来（并抢回焦点）。
+
+        显式退出和"被唤醒"不同：唤醒只是让窗口可以看（不抢焦点），退出是用户明确要
+        回到一般模式，所以这里 raise_() + activateWindow() 是对的。
+        """
         self._stealth_mode = False
+        self._stop_stealth_polling()
         self._cancel_leave_hide()
         # 顺序照 `_restore_opacity_if_hidden` 的约定：先清账本再刷新不透明度，否则
         # refresh_opacity 的"正在移出隐身"早退会把窗口留在 LEAVE_HIDE_OPACITY 上。
@@ -2990,10 +3090,82 @@ class MiniWindow(QWidget):
             self.tray.set_hidden_state(False)
         self._update_tray_stealth_indicator(False)
 
+    def _stop_stealth_polling(self) -> None:
+        """停掉 50ms 轮询并清掉三个会话状态。**不动窗口的可见性**。
+
+        所有"窗口以别的方式重新出现"的路径都要经过这里（托盘显示、老板键、退出模式），
+        否则残留的计时器会在 50ms 后按一根旧状态下的唤醒键把窗口重新藏起来。
+        """
+        self._stealth_timer.stop()
+        self._stealth_awake = False
+        self._wake_armed = False
+        self._stealth_rect = QRect()
+
+    def _cursor_in_stealth_rect(self) -> bool:
+        """鼠标在不在"进入隐私模式那一刻的窗口矩形"里。
+
+        窗口 hide() 之后 Qt 收不到 enterEvent，所以鼠标进出只能自己算：全局光标位置
+        和进入时记下的矩形做几何比较。
+
+        坐标系：QCursor.pos() 是 Qt 的全局**逻辑**坐标（已含 DPI 缩放），顶层窗口的
+        geometry() 也是同一套逻辑坐标，两边可以直接比。**不要再乘 device_pixel_ratio()**
+        ——那等于把逻辑坐标当物理坐标算，缩放不是 100% 时必然错位。多屏时 Qt 用的仍是
+        同一套虚拟桌面逻辑坐标，但"各屏缩放不同"这一种没在实机上验证过。
+
+        边框上多算 1px：光标正好压在右/下边框时 QRect.contains() 返回 False，用户会
+        觉得"手明明还在窗口里"。
+        """
+        rect = self._stealth_rect
+        if not rect.isValid():
+            return False
+        return rect.adjusted(-1, -1, 1, 1).contains(QCursor.pos())
+
+    def _stealth_tick(self) -> None:
+        """隐私模式的心跳：50ms 一次，决定窗口现在该不该显现。
+
+        状态机（顺序不能换）：
+          1. 唤醒键必须先被看到一次"全部松开"才上膛。进模式时 Ctrl+Shift 还按着，
+             少了这一步窗口会在按 L 的同一个瞬间弹回来。
+          2. 没上膛就什么都不做。
+          3. 按住唤醒键 + 鼠标在矩形内 -> show()。**不 activateWindow**：弹出并抢焦点
+             会把用户的注意力引过来，正好是隐私模式要避免的。
+          4. 已经唤醒但鼠标移出矩形 -> hide()，并清掉唤醒状态：再移进来不会自己回来，
+             必须重新"按住键 + 移入"。
+          5. 已经唤醒、鼠标还在里面（键松开了也一样）-> 保持，让用户松手后继续翻阅。
+
+        唤醒键为空（settings 里是空串或写坏了）时 _wake_codes 是空表：第 1 步立刻
+        上膛，但"按住"永远不成立，于是窗口永不显现——安全侧。托盘和老板键仍是回家的路。
+        """
+        if not self._stealth_mode:
+            return
+        wake = self._wake_codes
+        if not self._wake_armed and (not wake or not win32.keys_all_down(wake)):
+            self._wake_armed = True
+        if not self._wake_armed:
+            return
+        held = bool(wake) and win32.keys_all_down(wake)
+        inside = self._cursor_in_stealth_rect()
+        if held and inside:
+            if not self._stealth_awake or not self.isVisible():
+                self.show()
+                self._stealth_awake = True
+            return
+        if self._stealth_awake and not inside:
+            self.hide()
+            self._stealth_awake = False
+
     def _update_tray_stealth_indicator(self, on: bool) -> None:
-        """把模式状态交给托盘（红点 + "按 X 解锁"的 tooltip）。托盘可以不存在。"""
+        """把模式状态交给托盘（红点 + "按住唤醒键移入/按 X 退出"的 tooltip）。
+
+        唤醒键也要传：窗口藏起来之后，托盘 tooltip 是唯一还能说明"怎么叫回来"的表面。
+        托盘可以不存在。
+        """
         if self.tray is not None:
-            self.tray.set_stealth_state(bool(on), self.settings.stealth_mode_key)
+            self.tray.set_stealth_state(
+                bool(on),
+                self.settings.stealth_mode_key,
+                self.settings.stealth_wake_key,
+            )
 
     # ---- drag and drop ---------------------------------------------------
 
@@ -3137,6 +3309,14 @@ class MiniWindow(QWidget):
         # 关窗口就只是藏起来，进程继续活着；真正的退出只有托盘菜单的"退出"
         # （quit_app 置 _really_quit）。什么叫都没有时（比如无托盘的 offscreen/最小化
         # 环境）才真关——否则会留下一个看不见也找不回的进程。
+        # 隐私模式下 ✕ = 退出隐私模式回一般模式，**不是退出程序**（边角决策 1）。
+        # 用户看不见窗口的时候，最怕的就是"✕ 按下去进程还在跑、却没有任何入口"。
+        # 这条必须排在下面的 can_hide() 之前：否则 ✕ 会走老板键路径，而隐私模式的
+        # 轮询还活着，50ms 后可能又把窗口藏回去。
+        if self._stealth_mode and not self._really_quit:
+            event.ignore()
+            self._leave_stealth_mode()
+            return
         if not self._really_quit and self.can_hide():
             event.ignore()
             self._cancel_leave_hide()
@@ -3148,6 +3328,8 @@ class MiniWindow(QWidget):
         # 关窗口必须停掉自动滚动定时器：它每 40ms 动一次滚动条，留着就是个关了窗还在跑的
         # 循环，还会在解释器退出时炸出 "QScrollBar already deleted" 之类的错误。
         self.autoscroller.stop()
+        # 隐私模式的轮询同理：真退出时它必须停，否则会对着一个正在销毁的窗口 show()。
+        self._stealth_timer.stop()
         self.store.close()
         if self.hotkeys is not None:
             self.hotkeys.unregister_all()

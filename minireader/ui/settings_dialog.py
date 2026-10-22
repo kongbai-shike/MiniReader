@@ -24,7 +24,16 @@ from __future__ import annotations
 
 from dataclasses import replace
 
-from ..hotkeys import DEBOUNCE_MS, HotkeyError, format_hotkey, parse_hotkey, spec_from_qt
+from ..hotkeys import (
+    DEBOUNCE_MS,
+    Conflict,
+    HotkeyError,
+    find_conflicts,
+    format_hotkey,
+    parse_hotkey,
+    parse_to_vks,
+    spec_from_qt,
+)
 from ..core import rar
 from ..qt import (
     QApplication,
@@ -55,8 +64,15 @@ from ..qt import (
     QtWidgets,
     Signal,
     available_screen_geometry,
+    exec_dialog,
 )
-from ..storage import HOTKEY_FIELDS, Settings, alpha_to_percent, percent_to_alpha
+from ..storage import (
+    HOTKEY_FIELDS,
+    WAKE_FIELDS,
+    Settings,
+    alpha_to_percent,
+    percent_to_alpha,
+)
 from .theme import (
     AA_NORMAL,
     ACTIVE_EXTRAS,
@@ -108,6 +124,19 @@ COMIC_BINDING_CHOICES: tuple[tuple[str, str], ...] = (
     ("ltr", "左綴じ（从左往右）"),
 )
 
+# 唤醒键的"纯修饰键累积"顺序。隐私模式的唤醒键**可以只由修饰键组成**（默认就是
+# Ctrl+Shift）：它是 GetAsyncKeyState 轮询出来的，没有 RegisterHotKey 那条"必须再带一
+# 个普通键"的限制。顺序固定死，免得同一组键被写成两种文本。
+_WAKE_ORDER: tuple[tuple[str, str], ...] = (
+    ("Key_Control", "Ctrl"),
+    ("Key_Alt", "Alt"),
+    ("Key_Shift", "Shift"),
+    ("Key_Meta", "Win"),
+)
+
+# 哪些字段是唤醒键：决定编辑器用"纯修饰键累积"模式、也决定冲突小窗口里的提示。
+_WAKE_NAMES: frozenset[str] = frozenset(name for name, _label in WAKE_FIELDS)
+
 # 主按钮（确定）的橙：QQ 迷你窗的强调色。深色文字压橙色底的对比度约 7:1，白字只有
 # 3:1，所以主按钮用深字。**白昼主题沿用同一个橙**：橙底压深字的比值只跟这对颜色本身
 # 有关，跟窗口是深是浅无关，所以不必也不该为白昼再配一个橙（白底上再放浅橙会糊）。
@@ -138,6 +167,7 @@ def _stylesheet() -> str:
     QLabel {{ color: {p['fg']}; font-size: 13px; }}
     QLabel#Muted {{ color: {p['muted']}; font-size: 12px; }}
     QLabel#Warn {{ color: {p['warn']}; font-size: 12px; }}
+    QLabel#SavedNote {{ color: {x['saved_fg']}; font-size: 12px; font-weight: bold; }}
     QLabel#SubHeading {{ color: {p['fg']}; font-size: 12px; font-weight: bold; }}
     QLabel:disabled {{ color: {x['disabled_fg']}; }}
     QGroupBox {{
@@ -251,23 +281,47 @@ def _stylesheet() -> str:
     """
 
 
+def _modifier_name(key) -> str:
+    """修饰键的显示名，不是修饰键就返回 ""。
+
+    `getattr` 带默认值：PySide6 与 PyQt5 的 Qt.Key_* 名字并不完全一样，而"认不出
+    这个键"只该让唤醒键编辑框退回普通组合键路径，不该抛异常。
+    """
+    for name, label in _WAKE_ORDER:
+        if key == getattr(Qt, name, None):
+            return label
+    return ""
+
+
 class HotkeyEdit(QLineEdit):
     """Captures a single key chord and shows it as a MiniReader spec.
 
     Validating on capture rather than on save is the point: the user finds out
     immediately that a bare letter is not allowed (`RegisterHotKey` would steal it from
     every other program) instead of at the moment they press 确定.
+
+    `wake=True` 是隐私模式唤醒键专用的模式：它用 `parse_to_vks` 校验，允许"只有修
+    饰键"（默认 Ctrl+Shift）。全局热键没有这个自由——RegisterHotKey 必须要一个普通
+    键——但唤醒键是轮询的，所以这里可以，也必须能录进去。
     """
 
     # Emitted on every capture or clear. `editingFinished` is not enough: this widget is
     # read-only, and whether that signal fires on focus-out is not something to rely on.
     changed = Signal()
 
-    def __init__(self, spec: str = "", parent=None) -> None:
+    def __init__(self, spec: str = "", parent=None, *, wake: bool = False) -> None:
         super().__init__(parent)
         self.setReadOnly(True)
-        self.setPlaceholderText("点击这里再按组合键（Backspace 清除）")
+        self.setPlaceholderText(
+            "点击这里，按住唤醒键（如 Ctrl+Shift）；也可录一个普通组合键"
+            if wake
+            else "点击这里再按组合键（Backspace 清除）"
+        )
         self._problem = ""
+        # 唤醒键要能把"按住 Ctrl 再按 Shift"累积成 Ctrl+Shift：纯修饰键不产生任何
+        # 普通按键事件，靠 `_held` 记住这一轮按下了哪些。
+        self._wake = bool(wake)
+        self._held: set[str] = set()
         self.set_spec(spec, notify=False)
 
     def spec(self) -> str:
@@ -283,7 +337,10 @@ class HotkeyEdit(QLineEdit):
         self.setToolTip("")
         if spec:
             try:
-                parse_hotkey(spec)
+                if self._wake:
+                    parse_to_vks(spec)
+                else:
+                    parse_hotkey(spec)
             except HotkeyError as exc:
                 self._problem = str(exc)
                 self.setToolTip(str(exc))
@@ -312,10 +369,24 @@ class HotkeyEdit(QLineEdit):
         # Esc clears the binding instead of closing the dialog: losing the whole form
         # because you wanted to unbind one chord would be infuriating.
         if key in (Qt.Key_Escape, Qt.Key_Backspace, Qt.Key_Delete):
+            self._held.clear()
             self.set_spec("")
             event.accept()
             return
-        if key in (Qt.Key_Control, Qt.Key_Shift, Qt.Key_Alt, Qt.Key_Meta):
+        if self._wake:
+            name = _modifier_name(key)
+            if name:
+                # 纯修饰键：累积起来，顺序按 _WAKE_ORDER 归一，免得 Ctrl+Shift 与
+                # Shift+Ctrl 变成两种文本（它们对 GetAsyncKeyState 是同一组 VK）。
+                self._held.add(name)
+                self.set_spec(
+                    "+".join(
+                        label for _attr, label in _WAKE_ORDER if label in self._held
+                    )
+                )
+                event.accept()
+                return
+        elif key in (Qt.Key_Control, Qt.Key_Shift, Qt.Key_Alt, Qt.Key_Meta):
             return  # a modifier on its own is not a chord yet
         spec = spec_from_qt(key, event.modifiers())
         if spec is None:
@@ -325,9 +396,100 @@ class HotkeyEdit(QLineEdit):
         self.set_spec(spec)
         event.accept()
 
+    def keyReleaseEvent(self, event) -> None:  # noqa: N802
+        if self._wake:
+            name = _modifier_name(event.key())
+            if name:
+                # 松开只结束这一轮累积，显示值保持不动：否则手指一松，刚录好的
+                # Ctrl+Shift 就从框里消失，用户根本看不出自己设了什么。
+                self._held.discard(name)
+                event.accept()
+                return
+        super().keyReleaseEvent(event)
+
+
+class ConflictDialog(QDialog):
+    """热键冲突的"回滚 + 就地改"小窗口。
+
+    只做一件事：把本次冲突摆到用户面前，并允许当场改。它的"确定"**只关自己**（锁定
+    决策 5）：不回设置页重新检测，也不保存。用户回到设置页再点一次"确定"，那才叫第二
+    次检测——这样"改一个又撞上"不会变成连环弹窗。
+
+    `rows` 是 `[(name, label, spec)]`，`conflicts` 是 `[Conflict]`：冲突涉及的行标
+    红、其余行照常显示，好让用户看到全局再动手。
+    """
+
+    def __init__(self, parent, rows, conflicts, on_change=None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("热键冲突")
+        self.setStyleSheet(_stylesheet())
+        self.setMinimumWidth(520)
+        self._on_change = on_change
+        self.edits: dict[str, HotkeyEdit] = {}
+
+        conflicted: set[str] = set()
+        for conflict in conflicts:
+            conflicted.update(conflict.names)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(18, 16, 18, 14)
+        layout.setSpacing(8)
+
+        title = QLabel("这些热键互相冲突，本次改动已经全部回滚：")
+        title.setObjectName("Warn")
+        title.setWordWrap(True)
+        layout.addWidget(title)
+
+        grid = QGridLayout()
+        grid.setHorizontalSpacing(12)
+        grid.setVerticalSpacing(6)
+        for row, (name, label, spec) in enumerate(rows):
+            tag = QLabel(label)
+            if name in conflicted:
+                # 标"冲突"而不是 HotkeyBad：那个红框的含义是"这个写法不合法"，
+                # 而冲突的键单看都是合法的。
+                tag.setObjectName("Warn")
+            grid.addWidget(tag, row, 0)
+            edit = HotkeyEdit(spec, wake=name in _WAKE_NAMES)
+            # 绑死当前的 name：闭包晚绑定会让所有行都指向最后一行的编辑框。
+            edit.changed.connect(lambda name=name: self._edited(name))
+            self.edits[name] = edit
+            grid.addWidget(edit, row, 1)
+        grid.setColumnStretch(1, 1)
+        layout.addLayout(grid)
+
+        for conflict in conflicts:
+            message = QLabel(conflict.message)
+            message.setObjectName("Warn")
+            message.setWordWrap(True)
+            layout.addWidget(message)
+
+        hint = QLabel(
+            "改完点「确定」回到设置页，再点一次「确定」才会重新检测并保存。"
+        )
+        hint.setObjectName("Muted")
+        hint.setWordWrap(True)
+        layout.addWidget(hint)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok, self)
+        ok = buttons.button(QDialogButtonBox.Ok)
+        ok.setObjectName("PrimaryButton")
+        ok.setText("确定")
+        buttons.accepted.connect(self.accept)
+        layout.addWidget(buttons)
+
+    def _edited(self, name: str) -> None:
+        """把这一行改后的写法同步回设置页，这样回到设置页看到的就是最新的。"""
+        if self._on_change is not None:
+            self._on_change(name, self.edits[name].spec())
+
 
 class SettingsDialog(QDialog):
     """Modal-ish editor for `Settings`. `apply_to()` is the only writer."""
+
+    # 按下"确定"并且热键检测全部通过时发出（锁定决策 6：这个对话框不关）。主窗把它接
+    # 到"立刻写回 + 落盘"，所以用户看到的绿字"键位已保存"是真的已经存了，不是画饼。
+    saved = Signal()
 
     # 记住本进程内上次查看的页（不写进 Settings.json：那是偏好持久化，页签只是
     # 会话状态）。成本为零，跨"关掉再打开设置"保留，重启应用自然归零。
@@ -377,6 +539,11 @@ class SettingsDialog(QDialog):
         # 长在「窗口」页（它属于那个复选框的小组），其余长在「全局快捷键」页，而
         # 校验/写回/恢复默认只认这一张表。
         self.hotkey_edits: dict[str, HotkeyEdit] = {}
+        # 这次对话框里是否已经成功保存过一次。主窗靠它决定"关窗算不算确定"；对话框
+        # 自己在 reject() 里也用它，免得刚存完就按 ✕ 又把主窗的预览撤回去。
+        self._saved_ok = False
+        # 上次"确定"时的热键快照。冲突检测只针对**本次改动的**键，靠它算出改动集合。
+        self._hotkey_baseline: dict[str, str] = {}
         self._build(settings)
         self._fit_to_content_and_screen()
 
@@ -533,6 +700,13 @@ class SettingsDialog(QDialog):
         mode_note.setWordWrap(True)
         footer_layout.addWidget(mode_note)
 
+        # 绿字"键位已保存"。它在按"确定"且检测通过之后才出现，因为那个按钮**不关窗**
+        # （锁定决策 6），没有这句反馈用户会以为点了没反应。
+        self.save_note = QLabel("")
+        self.save_note.setObjectName("SavedNote")
+        self.save_note.setVisible(False)
+        footer_layout.addWidget(self.save_note)
+
         buttons = QDialogButtonBox(
             QDialogButtonBox.Ok | QDialogButtonBox.Cancel | QDialogButtonBox.RestoreDefaults
         )
@@ -571,6 +745,8 @@ class SettingsDialog(QDialog):
         self.hotkey_edits = {
             name: self.hotkey_edits[name] for name, _field, _label in HOTKEY_FIELDS
         }
+        # 打开时的热键快照：冲突检测只关心"这次改过的键"，靠它算差集。
+        self._remember_hotkeys()
         self._on_hotkeys_changed()
 
     def _make_page(self, title: str, subtitle: str, group: QGroupBox):
@@ -1066,21 +1242,25 @@ class SettingsDialog(QDialog):
         return box
 
     def _stealth_block(self, s: Settings) -> QWidget:
-        """防偷窥模式：藏在"鼠标移出隐身"下面，因为它们是同一个问题的两档答案。
+        """隐私模式：藏在"鼠标移出隐身"下面，因为它们是同一个问题的两档答案。
 
         故意**不是一个 QGroupBox**：这一页的版式约定是"一页一张卡片"（见
         `test_each_page_holds_exactly_its_own_group`），嵌套的分组框会破坏它。用一个小
         标题 + 缩进的表单块表达"从属关系"，视觉上就是分组。
 
-        这里**只有快捷键是可配的**：模式本身是会话状态，不落盘，所以没有复选框——
+        这里**只有两个键是可配的**：模式本身是会话状态，不落盘，所以没有复选框——
         一个"保存为开"的开关会在下次启动时把一个窗口藏起来，而在快捷键注册失败、托
         盘又被关掉的那台机器上，那个窗口就再也回不来了。
+
+        两个键分工不同，别把它们的校验混在一起：
+        * 「快捷键」是**出口**，要 RegisterHotKey，所以必须带一个普通键。
+        * 「唤醒键」是**入口**，只轮询 GetAsyncKeyState，不注册，所以可以只是修饰键。
         """
         block = QWidget()
         outer = QVBoxLayout(block)
         outer.setContentsMargins(0, 8, 0, 0)
         outer.setSpacing(4)
-        heading = QLabel("防偷窥模式")
+        heading = QLabel("隐私模式")
         heading.setObjectName("SubHeading")
         outer.addWidget(heading)
 
@@ -1094,9 +1274,24 @@ class SettingsDialog(QDialog):
         self.stealth_edit.changed.connect(self._on_hotkeys_changed)
         form.addRow("快捷键", self.stealth_edit)
 
+        self.wake_edit = HotkeyEdit(s.stealth_wake_key, wake=True)
+        self.wake_edit.changed.connect(self._on_hotkeys_changed)
+        form.addRow("唤醒键", self.wake_edit)
+
+        wake_what = QLabel(
+            "唤醒键要一直**按住**才算数：按住它、再把鼠标移进隐藏前的窗口范围，窗口才"
+            "会显现；松开后鼠标还在窗口里就继续可读，一旦移出立即隐形，再移进来不会自"
+            "己出现（必须重新按住唤醒键再移入）。它不注册全局热键，只在本机轮询，所以"
+            "可以只写修饰键（默认 Ctrl+Shift）。留空等于放弃唤醒：隐私模式还能进，但只"
+            "剩托盘和老板键能把窗口找回来。"
+        )
+        wake_what.setObjectName("Muted")
+        wake_what.setWordWrap(True)
+        form.addRow("", wake_what)
+
         what = QLabel(
-            "按此快捷键可以完全隐藏窗口（真隐藏，不是把透明度降到 0），只有再次按下"
-            "才显示。适合有他人在场时使用。"
+            "按此快捷键可以完全隐藏窗口（真隐藏，不是把透明度降到 0），适合有他人在场"
+            "时使用。"
         )
         what.setObjectName("Muted")
         what.setWordWrap(True)
@@ -1109,8 +1304,9 @@ class SettingsDialog(QDialog):
         # 只有托盘图标像素哈希与 tooltip 变了）。
         self.stealth_boss_note = QLabel(
             "它和老板键是同一档隐藏（都是把窗口真收起来），区别只在「你怎么知道自己在"
-            "哪一档」：防偷窥开着时托盘图标右上角多一个红点，鼠标停在上面会提示怎么"
-            "解锁。老板键也能解防偷窥；反过来，老板键藏着时按防偷窥键不会把窗口弄出来。"
+            "哪一档」：隐私模式开着时托盘图标右上角多一个红点，鼠标停在上面会提示怎么"
+            "解锁。老板键也能解隐私模式；反过来，老板键藏着时按隐私模式快捷键会把它顶"
+            "掉、直接进隐私模式。"
         )
         self.stealth_boss_note.setObjectName("Muted")
         self.stealth_boss_note.setWordWrap(True)
@@ -1129,7 +1325,7 @@ class SettingsDialog(QDialog):
         form.addRow("", self.stealth_interval_note)
 
         warn = QLabel(
-            "【重要提示】防偷窥模式是临时状态，不会持久化：重启 MiniReader 后默认关闭。"
+            "【重要提示】隐私模式是临时状态，不会持久化：重启 MiniReader 后默认关闭。"
             "窗口隐藏后，托盘菜单的「显示窗口」也可以恢复。"
         )
         warn.setObjectName("Muted")
@@ -1283,14 +1479,23 @@ class SettingsDialog(QDialog):
                 problems.append(f"{label} 和 {seen[chord]} 用了同一个组合键")
             else:
                 seen[chord] = label
+        # 唤醒键不在 HOTKEY_FIELDS 里（它不注册，见 storage.WAKE_FIELDS），但"写错了"
+        # 一样得挡住「确定」：写错的唤醒键在运行时会被当成空串，隐私模式就永远唤不醒。
+        wake = getattr(self, "wake_edit", None)
+        if wake is not None and wake.problem():
+            problems.append(f"{WAKE_FIELDS[0][1]}：{wake.problem()}")
         self.hotkey_note.setText("；".join(problems))
-        # 防偷窥那一组有自己的红字：它关心的是"藏了还能不能回来"，不是"有没有重复"。
+        # 隐私模式那一组有自己的红字：它关心的是"藏了还能不能回来"，不是"有没有重复"。
         self._update_stealth_note()
         # Blocking OK rather than silently dropping a bad binding on save: clearing a
         # field the user did not mean to clear is worse than making them look at it.
         ok = getattr(self, "_ok_button", None)
         if ok is not None:
             ok.setEnabled(not problems)
+        # 任何一次改动都让"键位已保存"作废：绿字还挂着、框里的值却已经不是那份存档，
+        # 是最容易骗到人的状态。
+        self._saved_ok = False
+        self._set_save_note("")
 
     def _on_recovery_toggled(self, _checked: bool = False) -> None:
         """托盘复选框动了：防偷窥那组的"至少一种恢复方式"结论要跟着重算。"""
@@ -1313,13 +1518,143 @@ class SettingsDialog(QDialog):
         tray = self.tray_check.isChecked()
         problems = []
         if not tray and not stealth and not boss:
-            problems.append("至少需要一种恢复方式：打开托盘图标，或给防偷窥模式绑定快捷键")
+            problems.append("至少需要一种恢复方式：打开托盘图标，或给隐私模式绑定快捷键")
         if stealth and boss and format_hotkey(stealth) == format_hotkey(boss):
-            problems.append("防偷窥快捷键与老板键冲突：按下去分不清是要哪一种隐藏")
+            problems.append("隐私模式快捷键与老板键冲突：按下去分不清是要哪一种隐藏")
+        wake = getattr(self, "wake_edit", None)
+        if wake is not None and not wake.spec():
+            # 不拦保存（托盘和老板键仍能把窗口找回来），但必须说清楚：这不是"没有
+            # 副作用"的空配置。红字在整块之外，块被禁用时也看得见。
+            problems.append(
+                "未设置唤醒键：隐私模式能进但无法唤醒，托盘和老板键仍可恢复窗口"
+            )
         self.stealth_note.setText("；".join(problems))
         # 没有话要说时它不该占着一行高度（否则小组和「窗口置顶」之间空出一块）。
         self.stealth_note.setVisible(bool(problems))
         self.stealth_widget.setEnabled(bool(tray or stealth or boss))
+
+    # ---- 热键冲突检测（只在内部去重，不试系统占用） --------------------
+
+    def _hotkey_labels(self) -> dict[str, str]:
+        """字段名 -> 给人看的名字。两张表合起来：唤醒键不在 HOTKEY_FIELDS 里。"""
+        labels = {name: label for name, _field, label in HOTKEY_FIELDS}
+        labels.update({name: label for name, label in WAKE_FIELDS})
+        return labels
+
+    def _current_hotkeys(self) -> dict[str, str]:
+        """框里当前的全部热键写法，含唤醒键。"""
+        specs = {
+            name: self.hotkey_edits[name].spec()
+            for name, _field, _label in HOTKEY_FIELDS
+        }
+        wake = getattr(self, "wake_edit", None)
+        for name, _label in WAKE_FIELDS:
+            specs[name] = wake.spec() if wake is not None else ""
+        return specs
+
+    def _conflict_rows(self) -> list[tuple[str, str, str]]:
+        """冲突小窗口要列出的每一行，顺序与设置页一致：先 HOTKEY_FIELDS 再唤醒键。"""
+        labels = self._hotkey_labels()
+        return [
+            (name, labels[name], spec)
+            for name, spec in self._current_hotkeys().items()
+        ]
+
+    def _remember_hotkeys(self) -> None:
+        """把当前写法记成"已保存"的基准，供下一次算改动集合。"""
+        self._hotkey_baseline = self._current_hotkeys()
+
+    def _changed_hotkeys(self) -> dict[str, str]:
+        """相对上次保存，这次真正动过的键。冲突检测只关心它们。"""
+        current = self._current_hotkeys()
+        return {
+            name: spec
+            for name, spec in current.items()
+            if self._hotkey_baseline.get(name) != spec
+        }
+
+    def _roll_back_hotkeys(self) -> None:
+        """把**所有**热键退回上次保存的写法，再重新校验一遍。
+
+        全退回比"只退改过的"简单且等价：没改过的本来就等于基准值。锁定决策 5 要求
+        "本次被修改的键全部回滚"，这里保守到把没改的也一起对齐。
+        """
+        for name, _field, _label in HOTKEY_FIELDS:
+            self.hotkey_edits[name].set_spec(self._hotkey_baseline.get(name, ""), notify=False)
+        wake = getattr(self, "wake_edit", None)
+        if wake is not None:
+            for name, _label in WAKE_FIELDS:
+                wake.set_spec(self._hotkey_baseline.get(name, ""), notify=False)
+        self._on_hotkeys_changed()
+
+    def _set_save_note(self, text: str) -> None:
+        """绿字"键位已保存"。空串等于撤掉（连行高一起撤）。"""
+        note = getattr(self, "save_note", None)
+        if note is None:
+            return
+        note.setText(text)
+        note.setVisible(bool(text))
+
+    def _apply_conflict_edit(self, name: str, spec: str) -> None:
+        """冲突小窗口里改了一行：立刻同步回设置页那个编辑器。
+
+        同步用 notify=True：设置页的校验、确定按钮状态、红字都得跟着重算，否则回到
+        设置页看到的还是旧结论。
+        """
+        edit = self.hotkey_edits.get(name)
+        if edit is not None:
+            edit.set_spec(spec)
+            return
+        wake = getattr(self, "wake_edit", None)
+        if wake is not None and name in _WAKE_NAMES:
+            wake.set_spec(spec)
+
+    def accept(self) -> None:  # noqa: N802
+        """「确定」：内部去重 -> 冲突就回滚并弹小窗口，通过就保存但**不关窗**。
+
+        锁定决策 5/6：
+        * 冲突：本次改过的键全部退回，弹出 ConflictDialog；它的确定只关闭，不检测。
+        * 通过：立刻发出 saved（主窗接到写回+落盘），底部绿字"键位已保存"，对话框
+          继续开着，用户还能接着改别的页。
+        """
+        # 校验没通过时按钮是灰的，但回车和"默认按钮"仍可能走到这里：写错的键在运行时
+        # 会被当成空串悄悄丢掉，比什么都不做更坏（用户以为存上了）。
+        if not self._ok_button.isEnabled():
+            return
+        changed = self._changed_hotkeys()
+        conflicts = find_conflicts(
+            changed, self._current_hotkeys(), self._hotkey_labels()
+        )
+        if conflicts:
+            self._roll_back_hotkeys()
+            self._saved_ok = False
+            self._set_save_note("")
+            dialog = ConflictDialog(
+                self,
+                self._conflict_rows(),
+                conflicts,
+                on_change=self._apply_conflict_edit,
+            )
+            try:
+                exec_dialog(dialog)
+            finally:
+                dialog.deleteLater()
+            return
+        self._remember_hotkeys()
+        self._saved_ok = True
+        self._set_save_note("键位已保存")
+        self.saved.emit()
+
+    def reject(self) -> None:  # noqa: N802
+        """取消 / 右上角 ✕。
+
+        已经成功保存过的话，关窗按"确定"算：主窗在 saved 时就已经把设置写回去并落盘
+        了，这里再走"取消"那条会把主题/透明度预览撤回，看起来像保存没生效。
+        """
+        if self._saved_ok:
+            super().accept()
+            return
+        super().reject()
 
     # ---- results ---------------------------------------------------------
 
@@ -1354,6 +1689,10 @@ class SettingsDialog(QDialog):
         s.hide_from_taskbar = bool(self.taskbar_check.isChecked())
         for name, _field, _label in HOTKEY_FIELDS:
             setattr(s, name, self.hotkey_edits[name].spec())
+        # 唤醒键不是全局热键，所以不在 HOTKEY_FIELDS 里；但它同样要落盘。
+        wake = getattr(self, "wake_edit", None)
+        if wake is not None:
+            s.stealth_wake_key = wake.spec()
         # 漫画与 PDF。四个枚举都从下拉框里取值，取值只可能落在合法集合内——
         # clamp() 那边的校验因此是兜底而不是主路径。
         s.pdf_default_kind = _combo_data(self.pdf_kind_combo)
@@ -1416,6 +1755,9 @@ class SettingsDialog(QDialog):
         self.taskbar_check.setChecked(fresh.hide_from_taskbar)
         for name, _field, _label in HOTKEY_FIELDS:
             self.hotkey_edits[name].set_spec(getattr(fresh, name))
+        wake = getattr(self, "wake_edit", None)
+        if wake is not None:
+            wake.set_spec(fresh.stealth_wake_key)
         self._on_hotkeys_changed()
         _select_data(self.pdf_kind_combo, fresh.pdf_default_kind)
         _select_data(self.comic_zoom_combo, fresh.comic_default_zoom)

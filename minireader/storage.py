@@ -249,6 +249,12 @@ class Settings:
     # （MiniWindow._stealth_mode），和 boss_hidden 一样重启即关——一个重启后仍
     # 自动隐藏的窗口，在热键注册失败又没有托盘时是找不回来的。
     stealth_mode_key: str = "Ctrl+Shift+L"
+    # 隐私模式的唤醒键：按住它、同时鼠标在窗口矩形里，隐藏的窗口才显现出来。
+    # 出厂值是**纯修饰键** 'Ctrl+Shift'——它从不注册给系统，只靠 GetAsyncKeyState
+    # 轮询（注册 Ctrl+Shift 既会被 Windows 拒绝，也会抢走全系统的键盘），所以
+    # parse_hotkey 那条"必须带一个非修饰键"的规则在这里不适用，用 parse_to_vks。
+    # 它参与设置页的内部去重：纯修饰键正是老板键（Ctrl+Shift+反引号）的前半段。
+    stealth_wake_key: str = "Ctrl+Shift"
     # session
     last_book: str | None = None
 
@@ -334,6 +340,10 @@ class Settings:
         for name, _field, _label in HOTKEY_FIELDS:
             value = getattr(self, name)
             setattr(self, name, value.strip() if isinstance(value, str) else "")
+        # 唤醒键不在 HOTKEY_FIELDS 里（它不注册给系统，见 Settings.hotkeys），
+        # 但同样要"非字符串一律清空"：清空的语义是"隐私模式永不显现"，安全侧。
+        value = self.stealth_wake_key
+        self.stealth_wake_key = value.strip() if isinstance(value, str) else ""
 
     def copy_into_geometry(self, x: int, y: int, w: int, h: int) -> None:
         self.geometry = {"x": int(x), "y": int(y), "w": int(w), "h": int(h)}
@@ -383,9 +393,16 @@ HOTKEY_FIELDS: tuple[tuple[str, str, str], ...] = (
     ("hotkey_prev", "hotkey_prev", "上一章"),
     ("hotkey_opacity_up", "hotkey_opacity_up", "提高不透明度"),
     ("hotkey_opacity_down", "hotkey_opacity_down", "降低不透明度"),
-    # 防偷窥模式的快捷键。放在最后：它属于窗口分组里的那个小组，注册顺序上却
+    # 隐私模式的快捷键。放在最后：它属于窗口分组里的那个小组，注册顺序上却
     # 和老板键同级——两者都是"整窗消失"的入口，谁先谁后都不影响语义。
-    ("stealth_mode_key", "stealth_mode_key", "防偷窥模式（完全隐藏/恢复）"),
+    ("stealth_mode_key", "stealth_mode_key", "隐私模式（完全隐藏/恢复）"),
+)
+
+# (field name, label) for key specs that are *polled* instead of registered. They take
+# part in the settings page's inner de-dup, but must never reach Settings.hotkeys() -
+# that dict is what feeds RegisterHotKey, and the wake key is deliberately not one.
+WAKE_FIELDS: tuple[tuple[str, str], ...] = (
+    ("stealth_wake_key", "隐私模式唤醒键（按住并把鼠标移入窗口）"),
 )
 
 _BOOL_FIELDS = (

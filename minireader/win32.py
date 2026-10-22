@@ -118,9 +118,18 @@ if IS_WINDOWS:  # pragma: no cover - exercised on the real platform
     if _get_dpi is not None:
         _get_dpi.argtypes = [wintypes.HWND]
         _get_dpi.restype = wintypes.UINT
+
+    # 隐私模式的唤醒键靠轮询读，不注册成热键：GetAsyncKeyState 是唯一能问"这个键
+    # 现在是否按着"的 Win32 接口。和 GetDpiForWindow 一样防御式解析，老 user32 上
+    # 缺了它只会让 is_key_down() 永远返回 False，不会影响 import。
+    _get_async_key_state = getattr(_user32, "GetAsyncKeyState", None)
+    if _get_async_key_state is not None:
+        _get_async_key_state.argtypes = [ctypes.c_int]
+        _get_async_key_state.restype = ctypes.c_short
 else:  # pragma: no cover
     _user32 = None
     _set_long = _get_long = _get_dpi = None
+    _get_async_key_state = None
 
 
 def hwnd_of(widget) -> int:
@@ -273,6 +282,44 @@ def logical_work_area(hwnd: int, fallback_dpr: float = 1.0) -> tuple[int, int, i
         return rect
     x, y, w, h = rect
     return (int(round(x / dpr)), int(round(y / dpr)), int(round(w / dpr)), int(round(h / dpr)))
+
+
+def is_key_down(vk: int) -> bool:
+    """Is that virtual-key code held down *right now*? Polling, not an event.
+
+    This is the read half of 隐私模式's wake key. The key is deliberately **not**
+    registered with `RegisterHotKey`: a global hotkey fires once on the press and
+    cannot answer "is it still held", and registering Ctrl+Shift would steal that chord
+    from every other program in the session.
+
+    GetAsyncKeyState's low bit means "pressed since the last call" and its high bit means
+    "down now"; only the high bit is used, so polling twice cannot produce a phantom
+    press. Returns False off Windows, on any error, and for a nonsensical code - this
+    module never raises.
+    """
+    if not IS_WINDOWS or _user32 is None or _get_async_key_state is None:
+        return False
+    try:
+        return bool(int(_get_async_key_state(int(vk))) & 0x8000)
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def keys_all_down(vks) -> bool:
+    """Are *all* of those virtual keys held? False for an empty list, on purpose.
+
+    The empty case is load-bearing: an unset 唤醒键 parses to an empty list, and
+    `all([])` is True - which would mean "the user is holding every key of the empty
+    set", i.e. the window would reveal itself to anyone who merely moved the mouse over
+    it. "No wake key" has to mean "never reveals", so the empty list answers False.
+    """
+    try:
+        codes = [int(vk) for vk in vks or ()]
+    except Exception:  # noqa: BLE001
+        return False
+    if not codes:
+        return False
+    return all(is_key_down(vk) for vk in codes)
 
 
 def describe() -> str:

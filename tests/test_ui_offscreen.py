@@ -176,6 +176,7 @@ class FakeTray(QObject):
         self.shutdown_called = False
         self.stealth_state = None
         self.stealth_spec = None
+        self.stealth_wake = None
 
     def set_title(self, title: str) -> None:
         self.title = title
@@ -183,9 +184,10 @@ class FakeTray(QObject):
     def set_hidden_state(self, hidden: bool) -> None:
         self.hidden_state = bool(hidden)
 
-    def set_stealth_state(self, on: bool, spec: str = "") -> None:
+    def set_stealth_state(self, on: bool, spec: str = "", wake: str = "") -> None:
         self.stealth_state = bool(on)
         self.stealth_spec = spec
+        self.stealth_wake = wake
 
     def set_opacity(self, percent: int) -> None:
         self.opacity = int(percent)
@@ -214,6 +216,9 @@ def _dispose_window(window: MiniWindow) -> None:
     window._progress_timer.stop()
     window._snap_timer.stop()
     window._leave_hide_timer.stop()
+    # 50 ms 隐私轮询也是一个持续的事件源：留着一个"每 50ms 决定要不要 show()"的计时
+    # 器，窗口会在这个测试之后、%APPDATA% 已经还原的时候突然冒出来。
+    window._stealth_timer.stop()
     window._opacity_anim.stop()
     window.autoscroller.stop()
     window.close()
@@ -734,36 +739,50 @@ class TestStealthMode(WindowTestCase):
         self.assertFalse(tray.stealth_state, "托盘要退回正常图标")
         self.assertEqual(tray.stealth_spec, "Ctrl+Alt+H", "退出后仍记着当前快捷键")
 
-    def test_the_boss_key_shows_it_again_and_ends_the_mode(self) -> None:
-        """老板键按下时用户要的是「回来」，不是「再藏一次」——它现在就是解锁。"""
+    def test_the_boss_key_takes_over_from_the_privacy_mode(self) -> None:
+        """隐私模式里按老板键 = 先干净退出隐私，再按老板键藏起来（边角决策 3）。
+
+        两种「藏」之间切换，中间绝不 show()：那一帧就是白送的泄露。所以按完老板键
+        窗口仍然不可见，但负责隐藏的机制已经换人了。
+        """
         window = self.stealth_window()
         window.update_boss_capability(
             {"boss_key": (True, ""), "stealth_mode_key": (True, "")}
         )
         window.attach_tray(FakeTray())
+        tray = window.tray
         window.toggle_stealth_mode()
         _app.processEvents()
         window.toggle_boss()
         _app.processEvents()
-        self.assertTrue(window.isVisible())
-        self.assertFalse(window._stealth_mode)
-        self.assertFalse(window.boss_hidden, "老板键不该把账记反")
+        self.assertFalse(window.isVisible(), "切换途中不许闪一帧窗口")
+        self.assertFalse(window._stealth_mode, "隐私模式要先干净退出")
+        self.assertTrue(window.boss_hidden, "账要记在老板键上")
+        self.assertFalse(tray.stealth_state, "红点要撤掉：现在是老板键模式")
+        self.assertFalse(window._stealth_timer.isActive(), "轮询必须停掉")
 
-    def test_the_chord_is_ignored_while_the_boss_key_holds_the_window(self) -> None:
-        """Ambiguous instruction: the window is already gone by another route, so do
-        nothing rather than guess (showing it would undo what the user just asked for)."""
+    def test_the_privacy_chord_takes_over_from_the_boss_key(self) -> None:
+        """老板键模式里按 Ctrl+Shift+L = 先干净退出老板键，再进隐私模式（边角决策 4）。
+
+        这是唯一一种「按隐私快捷键时窗口本来就不可见」的合法情形，因此不能像用户
+        手动最小化那样静默忽略——否则老板键模式里根本进不了隐私模式。
+        """
         window = self.stealth_window()
         window.set_boss_hint(True, self.settings.boss_key)
+        window.attach_tray(FakeTray())
+        tray = window.tray
         window.toggle_boss()
         _app.processEvents()
         self.assertFalse(window.isVisible())
         self.assertTrue(window.boss_hidden)
         window.toggle_stealth_mode()
         _app.processEvents()
-        self.assertFalse(window.isVisible(), "静默忽略")
-        self.assertFalse(window._stealth_mode)
-        self.assertTrue(window.boss_hidden, "老板键的账不许被改")
-        self.assertEqual(window.warn_label.text(), "", "也不该弹警告")
+        self.assertFalse(window.isVisible(), "全程不许有一帧可见窗口")
+        self.assertTrue(window._stealth_mode, "机制要换成隐私模式")
+        self.assertFalse(window.boss_hidden, "老板键的账要清掉")
+        self.assertTrue(tray.stealth_state, "红点要亮起来")
+        self.assertTrue(window._stealth_timer.isActive(), "轮询要跑起来")
+        self.assertEqual(window.warn_label.text(), "", "正常切换不该弹警告")
 
     def test_hiding_is_refused_with_no_way_back_at_all(self) -> None:
         """Same safety rule as the boss key: never hide without a door home."""
@@ -870,13 +889,18 @@ class TestStealthMode(WindowTestCase):
             self.assertEqual(tray.toolTip(), "季度报告")
             tray.set_stealth_state(True, "Ctrl+Alt+H")
             self.assertIn("Ctrl+Alt+H", tray.toolTip())
-            self.assertIn("防偷窥", tray.toolTip())
+            self.assertIn("隐私模式", tray.toolTip())
+            # 唤醒键是"怎么回去"的另一半：托盘提示必须把它写出来，否则用户在别处看
+            # 到这个红点也不知道怎么把窗口叫回来。
+            tray.set_stealth_state(True, "Ctrl+Alt+H", "Ctrl+Shift")
+            self.assertIn("Ctrl+Shift", tray.toolTip())
+            self.assertIn("按住", tray.toolTip())
             tray.set_stealth_state(False, "Ctrl+Alt+H")
             self.assertEqual(tray.toolTip(), "季度报告")
             # 伪装标题在模式期间照写不误，只是先不显示——退出时要原样回来。
             tray.set_stealth_state(True, "Ctrl+Alt+H")
             tray.set_title("新的伪装")
-            self.assertIn("防偷窥", tray.toolTip())
+            self.assertIn("隐私模式", tray.toolTip())
             tray.set_stealth_state(False, "Ctrl+Alt+H")
             self.assertEqual(tray.toolTip(), "新的伪装")
         finally:
