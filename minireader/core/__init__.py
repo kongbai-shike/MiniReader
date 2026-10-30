@@ -23,7 +23,15 @@ from .chapters import (
     split_chapters,
     split_chapters_auto,
 )
-from .encoding import Decoded, DecodeError, decode_txt, detect_encoding, reencode_options
+from .encoding import (
+    Decoded,
+    DecodeError,
+    check_readable,
+    decode_txt,
+    detect_encoding,
+    reencode_options,
+    unreadable_share,
+)
 from .formats import FORMATS, Format, dialog_filters, format_for, kind_for, support_note
 from .model import Book, BookError, Progress, book_id, human_size
 
@@ -199,6 +207,7 @@ __all__ = [
     "SplitResult",
     "book_id",
     "chapters_from_marks",
+    "check_readable",
     "classify",
     "clean_title",
     "decode_txt",
@@ -235,5 +244,6 @@ __all__ = [
     "split_chapters",
     "split_chapters_auto",
     "support_note",
+    "unreadable_share",
     "write_bmp",
 ]

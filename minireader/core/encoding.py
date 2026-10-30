@@ -76,6 +76,20 @@ _SAMPLE = 24000
 _CONFIDENT_SCORE = 0.35
 _PLAUSIBLE_SCORE = 0.05
 
+# 解码结果里 U+FFFD 超过这个比例，就认定"这根本不是文本文件"，直接拒绝。
+#
+# 这条闸门是拿一台真机器上的真事故换来的。一本 14 MB 的小说在下载中断后变成整篇
+# 0xFF（逐字节统计：100% 是 0xFF）。gb18030 是"什么都不报错"的编码，于是它"解码
+# 成功"——解出 1448 万个 U+FFFD，而且**整本没有一个换行**，分章器只能给出一个覆盖
+# 全文的"全文"章。这个东西一路无碍地走到 Qt 手上，变成 1450 万个替换字符挤在同一个
+# 段落里待排版。实测：10 万字符 4.2 秒、30 万字符 44 秒（每个替换字符都要走一次字体
+# 回退，耗时不是线性的），14 MB 那本等于把 GUI 线程永久钉死——窗口已经显示出来了，
+# 却一个字也读不到、点也点不动。用户看到的现象就是"程序启动了，但读不了书"。
+#
+# 50% 是刻意宽松的：真实世界里的书偶尔有几个坏字节（截断的下载、夹杂的控制字符），
+# 那种文件的 U+FFFD 占比远在 0.1% 以下；只有"整本都不是字"才会越线。
+_UNREADABLE_RATIO = 0.50
+
 
 class DecodeError(Exception):
     """Raised only when even the lossy fallback produced nothing usable."""
@@ -223,6 +237,9 @@ def decode_txt(data: bytes, force: str | None = None) -> Decoded:
             text = _normalize(_decode(data, force, "replace"))
         except LookupError as exc:
             raise DecodeError(f"未知编码: {force}") from exc
+        # 手动指定也要过这道闸：用户挑编码是为了修"认错字"，不是为了绕过损坏检查。
+        # 一个 0xFF 文件无论指定成哪种编码，解出来都还是一堆替换字符。
+        check_readable(text)
         label = _KNOWN_ENCODINGS.get(force, force.upper())
         return Decoded(text, force, label, True, ["手动指定编码"])
 
@@ -232,6 +249,7 @@ def decode_txt(data: bytes, force: str | None = None) -> Decoded:
     for bom, enc, label in _BOMS:
         if data.startswith(bom):
             text = _normalize(_decode(data, enc, "replace"))
+            check_readable(text)
             return Decoded(text, enc, label, True, ["按 BOM 判定"])
 
     # 2) Strict UTF-8 wins outright, but only when no NUL byte is in sight.
@@ -281,6 +299,7 @@ def decode_txt(data: bytes, force: str | None = None) -> Decoded:
                 )
         notes.append("按常用字密度判定")
         text = _normalize(_decode(data, enc, "replace"))
+        check_readable(text)
         return Decoded(text, enc, label, confident, notes)
 
     # 4) Last resort: lossy GB18030 never raises, so this always produces something.
@@ -289,7 +308,36 @@ def decode_txt(data: bytes, force: str | None = None) -> Decoded:
     notes.append("所有编码均解码失败，已用 GB18030 有损解码")
     if ratio < 0.9:
         notes.append(f"仍有 {round((1 - ratio) * 100)}% 字节无法识别")
+    check_readable(text)
     return Decoded(text, "gb18030", "GB18030 (有损)", False, notes)
+
+
+def unreadable_share(text: str) -> float:
+    """这个解码结果里，有多大比例是"根本不认识"的 U+FFFD。"""
+    if not text:
+        return 0.0
+    return text.count("\ufffd") / len(text)
+
+
+def check_readable(text: str) -> None:
+    """整份解码结果几乎全是 U+FFFD 时拒绝它，而不是把它交给排版。
+
+    见 _UNREADABLE_RATIO 旁边那段注释的实测数据：一个 14 MB 的 0xFF 文件会被 gb18030
+    "成功"解成 1448 万个替换字符，Qt 排版它是无限久。这里抛 DecodeError，让上层
+    （Book.from_path -> BookError -> 窗口的「打不开：…」）用一句人话说清楚，而不是让
+    GUI 线程卡死在一本根本读不了的书上。
+
+    文案刻意给出下一步动作：重新下一份。这不是"换个编码就能救"的情况——文件里没有字，
+    只有填充字节。
+    """
+    share = unreadable_share(text)
+    if share < _UNREADABLE_RATIO:
+        return
+    percent = round(share * 100)
+    raise DecodeError(
+        f"这个文件不是可读的文本（{percent}% 的内容无法识别），"
+        "多半是下载没完成或文件已损坏，请重新下载一份"
+    )
 
 
 def _normalize(text: str) -> str:

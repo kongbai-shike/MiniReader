@@ -2020,10 +2020,10 @@ class MiniWindow(QWidget):
                 try:
                     choice = pdf_choice(path)
                 except BookError as exc:
-                    self.set_warning(f"打不开：{exc}")
+                    self._report_open_failure(str(exc))
                     return False
                 except Exception as exc:  # noqa: BLE001 - a bad file must not kill the window
-                    self.set_warning(f"打不开：{type(exc).__name__}: {exc}")
+                    self._report_open_failure(f"{type(exc).__name__}: {exc}")
                     return False
                 if choice.needs_ask:
                     answer = self._ask_pdf_kind(path)
@@ -2037,10 +2037,10 @@ class MiniWindow(QWidget):
         try:
             book = open_book(path, pdf_kind=prefer)
         except BookError as exc:
-            self.set_warning(f"打不开：{exc}")
+            self._report_open_failure(str(exc))
             return False
         except Exception as exc:  # noqa: BLE001 - a bad file must not kill the window
-            self.set_warning(f"打不开：{type(exc).__name__}: {exc}")
+            self._report_open_failure(f"{type(exc).__name__}: {exc}")
             return False
         if answer is not None:
             # Written only now, with the book in hand. Recording the answer before
@@ -2772,11 +2772,25 @@ class MiniWindow(QWidget):
         self.autoscroller.start()
         self._sync_autoscroll_button()
 
-    def _show_placeholder(self) -> None:
+    def _show_placeholder(self, failure: str = "") -> None:
         # 占位文案走当前 Reader 的接口。文本模式给出阅读提示，漫画模式画一句
         # "还没有打开漫画"——两种空状态本来就该长得不一样。
+        #
+        # `failure` 是"上次那本打不开"的原因。它必须写进**正文区**，不能只放底栏：
+        # 实测 320px 宽的窗口里，底栏那一格警告只剩 9px（左右两个翻页胶囊 + 目录/
+        # 设置按钮先分完了宽度），一行字被省略成「打」一个字。而"打不开"恰恰是用户
+        # 最需要读懂的一句话——书坏掉时正文区本来就是空的，那里有整整一屏可以说话。
         if self.book is not None and self.book.kind == KIND_COMIC:
             self.reader.show_book(None)
+        elif failure:
+            self._text_reader.show_book(None)
+            self._text_reader.set_chapter(
+                "这本书打不开。\n\n"
+                f"{failure}\n\n"
+                "· 换一本：点左下角「打开」，或把文件拖进窗口\n"
+                "· 如果它本来是好的，可能是在复制或下载途中损坏了",
+                offset=0,
+            )
         else:
             self._text_reader.show_book(None)
             self._text_reader.set_chapter(
@@ -2790,7 +2804,7 @@ class MiniWindow(QWidget):
         self.title_label.setText("MiniReader")
         self.chapter_label.setText("")
         self.progress_label.setText("")
-        self.status_label.setText("还没有打开文件")
+        self.status_label.setText("打不开这本书" if failure else "还没有打开文件")
         self._sync_comic_buttons()
 
     # ---- status ----------------------------------------------------------
@@ -2851,6 +2865,22 @@ class MiniWindow(QWidget):
 
     def set_warning(self, text: str) -> None:
         self.warn_label.setText(text or "")
+
+    def _report_open_failure(self, reason: str) -> None:
+        """一本书打不开：底栏说一句，**手上没有书时**再在正文区把原因说清楚。
+
+        两处都说，是因为它们能说的话不一样长。底栏只有一格宽度（320px 的窗口里
+        实测 9px），够放「打不开」三个字，放不下"为什么"；正文区整屏都空着，正好
+        用来说清楚原因和下一步。只写底栏时，用户看到的是一个空窗口加一个单字，
+        和"程序坏了"没有区别——这正是这本损坏的书最初被报告的样子。
+
+        但**已经有一本书开着的时候只动底栏**。打不开的是新文件，不是手上这本；
+        把正文清掉等于顺手关掉了用户正在读的书，那是比不提示更糟的副作用
+        （`test_a_missing_file_is_reported_and_changes_nothing` 守着这条）。
+        """
+        self.set_warning(f"打不开：{reason}")
+        if self.book is None:
+            self._show_placeholder(failure=reason)
 
     def set_boss_hint(self, available: bool, spec: str = "") -> None:
         """The hint is the user's only reassurance that the boss key exists."""

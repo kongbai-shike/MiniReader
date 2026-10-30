@@ -402,6 +402,39 @@ class TestOpeningFiles(WindowTestCase):
         window = self.make_window()
         window.load_path(path)  # either outcome, but no exception
 
+    def test_an_unreadable_book_explains_itself_in_the_reading_area(self) -> None:
+        """打不开的原因必须说在**正文区**，不能只放底栏。
+
+        底栏那一格在 320px 宽的窗口里实测只有 9px 宽（左右两组胶囊按钮先分完了宽度），
+        一行警告被省略成「打」一个字。真实事故里用户看到的就是一个空窗口加一个字，
+        报告成了"程序能开但读不了书"——原因（文件损坏）一个字都没传达到。
+        """
+        path = self.tmp / "corrupt.txt"
+        path.write_bytes(b"\xff" * (512 * 1024))
+        window = self.make_window()
+
+        self.assertFalse(window.load_path(path))
+        self.assertIsNone(window.book)
+        # 正文区把"为什么"和"怎么办"都说出来。
+        body = window.reader.toPlainText()
+        self.assertIn("打不开", body)
+        self.assertIn("不是可读的文本", body)
+        self.assertIn("重新下载", body)
+        # 底栏仍然给一句短的，两处都要有。
+        self.assertIn("打不开", window.warn_label.text())
+
+    def test_a_failed_open_keeps_the_book_already_on_screen(self) -> None:
+        """打不开的是**新文件**，不是手上这本：正文一个字都不许动。"""
+        window = self.make_window(path=self.book_path)
+        before = window.reader.toPlainText()
+        corrupt = self.tmp / "corrupt.txt"
+        corrupt.write_bytes(b"\xff" * (512 * 1024))
+
+        self.assertFalse(window.load_path(corrupt))
+        self.assertEqual(window.reader.toPlainText(), before, "手上这本书被顺手关掉了")
+        self.assertEqual(window.book.chapter_count, 3)
+        self.assertIn("打不开", window.warn_label.text())
+
     def test_drag_and_drop_accepts_txt_and_rejects_other_types(self) -> None:
         window = self.make_window()
         txt = QMimeData()
