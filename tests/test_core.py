@@ -35,6 +35,7 @@ if ROOT not in sys.path:
 
 from minireader.core import chapters as C  # noqa: E402
 from minireader.core import encoding as E  # noqa: E402
+from minireader.core.model import Book  # noqa: E402
 
 GOLDEN = os.path.join(ROOT, "tests", "conformance.json")
 
@@ -455,6 +456,129 @@ class TestChapterKernel(unittest.TestCase):
         hit = C.detect_chapter_re(text)
         if hit is not None:
             self.assertGreaterEqual(hit["shortRatio"], 0.5)
+
+
+class TestGhostHeadings(unittest.TestCase):
+    """A heading line whose chapter has no text, immediately followed by the same
+    heading again with the body under it.
+
+    Several dumps are laid out that way - the scraper wrote the bare title, then
+    the body block which repeats the title on its own line:
+
+        第1章 沈河
+        第1章 沈河
+        　　静寂的房间中……
+
+    The regex kernel sees two marks, so the book got one empty chapter and one real
+    chapter per heading ("every chapter appears twice, the first one blank"). The
+    kernel itself is the frozen JS behaviour and is left alone; the merge lives in
+    split_chapters / split_chapters_auto, one layer above the marks.
+    """
+
+    def split(self, text: str) -> C.SplitResult:
+        return C.split_chapters_auto(text)
+
+    def test_a_bare_heading_before_the_real_one_is_one_chapter(self) -> None:
+        text = "第1章 沈河\n第1章 沈河\n　　静寂的房间中，只有钟摆在响。\n"
+        result = self.split(text)
+        self.assertEqual([c.title for c in result.chapters], ["第1章 沈河"])
+
+    def test_the_merged_chapter_covers_the_ghost_line_too(self) -> None:
+        """Nothing is left orphaned in front of the merged chapter.
+
+        If the ghost line were dropped and the real mark kept, a book that opens
+        with a ghost pair would get a stray 前言 chapter made of the bare title.
+        """
+        text = "第1章 沈河\n第1章 沈河\n　　静寂的房间中，只有钟摆在响。\n"
+        chapters = C.split_chapters(text)
+        self.assertEqual(chapters[0].start, 0)
+        self.assertEqual(chapters[0].end, len(text))
+
+    def test_chapter_body_drops_both_heading_lines(self) -> None:
+        text = "第1章 沈河\n第1章 沈河\n　　静寂的房间中，只有钟摆在响。\n"
+        book = Book.from_text(text, path="t.txt")
+        self.assertEqual(len(book.chapters), 1)
+        body = book.chapter_body(0)
+        self.assertNotIn("第1章", body)
+        self.assertIn("静寂的房间中", body)
+
+    def test_a_ghost_pair_needs_no_body_between_the_two_headings(self) -> None:
+        text = "第1章 甲\n\n第1章 甲\n正文。\n"
+        self.assertEqual(len(C.split_chapters(text)), 1)
+
+    def test_body_between_the_two_headings_keeps_both(self) -> None:
+        """The real chapter has text, so the next heading is a new chapter."""
+        text = "第1章 甲\n正文一。\n第1章 甲\n正文二。\n"
+        self.assertEqual(len(C.split_chapters(text)), 2)
+
+    def test_a_title_repeated_three_times_is_one_chapter_not_zero(self) -> None:
+        text = "第1章 甲\n第1章 甲\n第1章 甲\n正文。\n"
+        self.assertEqual([c.title for c in C.split_chapters(text)], ["第1章 甲"])
+
+    def test_the_same_number_written_two_ways_merges(self) -> None:
+        """'第六十一章 剧终' then '第62章 剧终' - Chinese numerals vs digits."""
+        text = "第六十一章 剧终\n第62章 剧终\n全剧终。\n"
+        self.assertEqual([c.title for c in C.split_chapters(text)], ["第62章 剧终"])
+
+    def test_a_renumbered_title_of_the_same_style_does_not_merge(self) -> None:
+        """Two digits, same title, two numbers: the dump contains both chapters."""
+        text = "第103章 进军实体书行业？（上）\n第104章 进军实体书行业？（上）\n正文。\n"
+        self.assertEqual(len(C.split_chapters(text)), 2)
+
+    def test_a_title_typed_slightly_wrong_still_merges(self) -> None:
+        """'怎么个事' vs '怎幺个事', 'vs' vs 'v', '的' vs 'の'."""
+        for ghost, real in (
+            ("第188章 让我来看看怎么个事", "第188章 让我来看看怎幺个事"),
+            ("第326章 关意vs老年斑", "第326章 关意v老年斑"),
+            ("第223章 灰雾大厅装逼日常", "第223章 灰雾大厅の装逼日常"),
+        ):
+            with self.subTest(ghost=ghost):
+                text = f"{ghost}\n{real}\n正文。\n"
+                self.assertEqual([c.title for c in C.split_chapters(text)], [real])
+
+    def test_an_unrelated_neighbour_does_not_merge(self) -> None:
+        text = "第181章 逆生三重，灭门之祸！\n第180章 左若童\n正文。\n"
+        self.assertEqual(len(C.split_chapters(text)), 2)
+
+    def test_countdown_headings_without_a_title_do_not_merge(self) -> None:
+        """【第二十章】【第十九章】… is prose, and it has no title to confirm it."""
+        text = "【第二十章 】\n【第十九章 】\n【第十一章 】\n正文继续。\n"
+        self.assertEqual(len(C.split_chapters(text)), 3)
+
+    def test_a_volume_heading_before_its_first_chapter_does_not_merge(self) -> None:
+        """'第一卷 这个世界' then '第一章 …' is a real two-level heading."""
+        text = "第一卷 这个世界，好像有点不一样啊\n第一章 我是个穿越者\n正文。\n"
+        self.assertEqual(len(C.split_chapters(text)), 2)
+
+    def test_a_prose_line_that_opens_with_a_volume_word_does_not_merge(self) -> None:
+        """'第一部的拍摄分为两部分。' is body text a loose rule matched."""
+        text = "第533章，不一样的大片\n第一部的拍摄分为两部分。\n正文很长。\n"
+        self.assertEqual(len(C.split_chapters(text)), 2)
+
+    def test_paragraph_length_titles_do_not_merge(self) -> None:
+        """Two 80-character 'titles' are body text, not headings."""
+        text = "第1章 " + "很长的正文" * 16 + "\n第2章 " + "很长的正文" * 16 + "\n"
+        self.assertEqual(len(C.split_chapters(text)), 2)
+
+    def test_the_merge_keeps_the_chapters_contiguous_and_ordered(self) -> None:
+        text = (
+            "第1章 甲\n第1章 甲\n正文一。\n"
+            "第六十一章 乙\n第62章 乙\n正文二。\n"
+            "第63章 丙\n第63章 丙\n正文三。\n"
+        )
+        chapters = C.split_chapters(text)
+        self.assertEqual(len(chapters), 3)
+        self.assertEqual(chapters[0].start, 0)
+        for previous, current in zip(chapters, chapters[1:]):
+            self.assertEqual(previous.end, current.start)
+        self.assertEqual(chapters[-1].end, len(text))
+        for index, chapter in enumerate(chapters):
+            self.assertIn("正文", text[chapter.start : chapter.end])
+
+    def test_a_user_pattern_gets_the_same_merge(self) -> None:
+        text = "第1章 甲\n第1章 甲\n正文。\n"
+        result = C.split_chapters_auto(text, r"^第[0-9]+章")
+        self.assertEqual(len(result.chapters), 1)
 
 
 class TestPerformanceOptimisationsAreExact(ConformanceBase):

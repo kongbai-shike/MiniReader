@@ -16,7 +16,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from .book_base import BookBase
-from .chapters import Chapter, SplitResult, split_chapters_auto
+from .chapters import Chapter, SplitResult, is_ghost_pair, split_chapters_auto
 from .encoding import DecodeError, Decoded, decode_txt
 from .formats import DOCX_EXTS, FB2_EXTS, HTML_EXTS
 
@@ -436,6 +436,10 @@ class Book(BookBase):
 
         Port of currentChapterText() (client.js:621-630): the heading line is also
         the first line of the chapter slice, so it would otherwise be printed twice.
+
+        A merged ghost pair (see chapters.merge_ghost_headings) repeats the heading
+        on two lines - the bare title and then the body block that repeats it - so
+        every leading line that names this chapter is removed, not just the first.
         """
         ch = self.chapter(index)
         if ch is None:
@@ -443,8 +447,23 @@ class Book(BookBase):
         raw = self.text[ch.start : ch.end]
         lines = raw.split("\n")
         first = (lines[0] if lines else "").strip()
-        body = "\n".join(lines[1:]) if (ch.title and first == ch.title) else raw
-        return body.lstrip("\n")
+        base = 1 if (ch.title and first == ch.title) else 0
+        dropped = base
+        # Only a chapter that opens with its own heading can have a second copy of
+        # it; formats that keep the title out of the text (EPUB/PDF/DOCX) are never
+        # touched here.
+        if base and ch.title:
+            while dropped < len(lines):
+                head = lines[dropped].strip()
+                if head and (head == ch.title or is_ghost_pair(head, ch.title)):
+                    dropped += 1
+                else:
+                    break
+            # An extra duplicate is only stripped when real text follows it: a
+            # chapter whose body IS the heading line still shows that line.
+            while dropped > base and not "\n".join(lines[dropped:]).strip():
+                dropped -= 1
+        return "\n".join(lines[dropped:]).lstrip("\n")
 
     def clamp(self, index: int) -> int:
         if not self.chapters:
