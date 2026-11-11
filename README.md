@@ -274,46 +274,48 @@ MiniReader 0.1.0
 ## 7. 测试
 
 ```bat
-:: 全部 1764 项测试（约 52 秒，全程无窗口）
+:: 全部 1841 项测试（约 95 秒，全程无窗口）
 py -3.12 -m unittest discover -s tests -t .
 
 :: 单独跑一个模块（模块名见下表）
 py -3.12 -m unittest tests.test_ui_offscreen
 ```
 
-分模块实测（逐模块相加 = `discover` 的 **1764**，其中 **8** 项在无桌面环境下跳过）：
+分模块实测（逐模块相加 = `discover` 的 **1841**，其中 **8** 项在无桌面环境下跳过）：
 
 | 模块 | 项 | 覆盖内容 |
 | --- | ---: | --- |
-| `test_ui_offscreen` | 176 | 界面：窗口外观、滚动、翻章、老板键、防偷窥、透明度、伪装、吸附、托盘、设置面板 |
+| `test_ui_offscreen` | 178 | 界面：窗口外观、滚动、翻章、老板键、防偷窥、透明度、伪装、吸附、托盘、设置面板 |
 | `test_comic_ui` | 165 | 漫画在真实窗口里的行为 |
-| `test_stage5_spread` | 130 | 阶段 5：双页模式（模式 C） |
+| `test_stage5_spread` | 138 | 阶段 5：双页模式（模式 C）+ 模式记忆 |
 | `test_comic` | 117 | 阶段 2 核心层：格式表 / 压缩包 / 图片文件夹 / ComicBook / 打开裁决 |
 | `test_stage4_scroll` | 97 | 阶段 4：连续滚动模式（模式 B） |
 | `test_reading_features` | 93 | 端到端：目录抽屉 / 书签 / 上下章 / 自动滚动 / 排版 |
-| `test_storage` | 90 | 存储层：几何校验、配置往返、坏文件容错 |
+| `test_storage` | 93 | 存储层：几何校验、配置往返、坏文件容错 |
 | `test_rar` | 74 | CBR/RAR 漫画 |
 | `test_epub_fixed` | 70 | 阶段 7：EPUB 固定版式的检测、取页与分派 |
 | `test_text_formats` | 70 | FB2 / DOCX / HTML 三条文字格式路径 |
 | `test_store` | 65 | 书签库：清洗、排序、按书隔离、持久化、坏了一切也降级 |
 | `test_pdf` | 60 | 阶段 3：PDF 判型 / 双路径 / 手工覆盖 / ask-once |
+| `test_core` | 59 | 分章内核与冻结的 JS 实现逐字一致 + 大文件性能 + 重复标题行合并 |
 | `test_mobi` | 57 | 阶段 6 核心层：MOBI/AZW3 |
 | `test_book_base` | 55 | 阶段 1：BookBase / Reader 抽象层 |
+| `test_hotkeys` | 50 | 热键解析、Qt 按键翻译、批量注册、60 ms 去抖 |
 | `test_cb7` | 49 | CB7（7z）漫画 |
 | `test_autoscroll` | 44 | 自动滚动引擎：速度夹取、按时间累计、暂停/恢复、到底自停 |
 | `test_toc_panel` | 44 | 章节目录 / 书签面板（无头） |
-| `test_core` | 59 | 分章内核与冻结的 JS 实现逐字一致 + 大文件性能 + 重复标题行合并 |
 | `test_epub_spread` | 37 | 阶段 8：`rendition:spread` 的解析与消费 |
-| `test_hotkeys` | 35 | 热键解析、Qt 按键翻译、批量注册、60 ms 去抖 |
 | `test_snap` | 33 | 吸附几何与离屏夹取（纯几何，无 Qt 无窗口） |
 | `test_epub` | 25 | EPUB 解析 |
 | `test_stage2_qq_layout` | 25 | 阶段 2：QQ 迷你窗竖版形态 |
 | `test_theme_switch` | 25 | 主题切换（暗夜 / 白昼） |
+| `test_win32` | 24 | Win32 封装（其中 6 项需要真实桌面） |
 | `test_epub_integration` | 23 | EPUB 通过 `Book.from_path` 的端到端接入 |
+| `test_stealth_privacy` | 21 | 防偷窥模式的状态机（进/出/唤醒键/鼠标）+ 热键冲突对话框 |
 | `test_stage3_context_menu` | 20 | 阶段 3 交互项（右键菜单等） |
-| `test_win32` | 18 | Win32 封装（其中 6 项需要真实桌面） |
 | `test_theme` | 15 | 配色对比度审计 |
 | `test_app_paths` | 8 | 源码 / 打包两种形态下的资源路径与可写目录 |
+| `test_unreadable_book` | 6 | 整篇不是文字的坏文件必须当场拒绝，不许交给排版 |
 | `test_app_launch` | 1 | **真跑 `main()`**：启动顺序、热键装配、退出清理 |
 
 `test_reading_features` 是唯一一个**把整条链路装起来跑**的模块：真开一个窗口、真加载一本书、真点按钮、真写一份临时 SQLite。它和 `test_ui_offscreen` 共用同一个 `WindowTestCase` 沙箱。
@@ -681,6 +683,11 @@ requirements.txt         依赖说明
 - **自动滚动的定时器间隔是 40ms，但速度不按间隔算。** 40ms 只是采样频率（够顺，又不至于白烧 CPU）；真正走多少像素由 `time.monotonic()` 的差值决定。计时器晚到或合并都不会让速度变慢。
 - **目录抽屉不是一个弹出窗口。** 见 9.1：主窗口是 `Qt.Tool`，第二块顶层窗口会让老板键和「隐藏到托盘」都留下漏网之鱼。
 - **`QToolButton` 有 22px 的最小尺寸。** Qt 在小字号下算出来的 `sizeHint` 能低到 19px，低于可用性下限。没有取触屏推荐的 24px，是因为这套界面的目标是一个鼠标操作的、标题栏尽量薄的常驻小窗——22px 是「够点」和「不占地方」之间的取舍，测试里把这个下限钉住了。
+- **切模式这件事本身要落盘，不能指望后面某次翻页帮忙兜底。** `Progress.mode` 一直带着阅读模式，但早先只有翻页、滚动这些路径会顺带写一次 `progress.json`：切到双页、关掉、重开，模式又回到默认值，用户看到的就是「切了没记住」。`cycle_comic_mode()` 末尾显式 `persist_progress()`，因为用户切完可能再也不翻页。
+- **用户的临时选择不能被「改设置」打回默认值。** `apply_comic_settings()` 挂在每一次 `apply_preferences()` 上——改字号、换主题、调透明度都算。无条件重推 `comic_default_mode` 的代价是：刚在标题栏切到双页，去设置里点一下「确定」（哪怕只调了个字号），模式就莫名其妙回到单页。所以窗口记住上一次真正推给 reader 的值（`_pushed_comic_mode`），只有「阅读模式」这一项真的变了才推。
+- **恢复上次的模式是安静的，而且窄窗里保存的双页要落到单页。** `restore_mode()` 与 `set_mode()` 分开：恢复是替上一场会话办事，不是回答用户，所以窗口太窄时不出声（`set_mode(quiet=True)`）；竖窗里存下的 `spread` 落到 `single`，而不是「因为双页被拒就留在上一本书碰巧用的 `scroll`」——那样等于同一件事有三个答案。
+- **窄窗拒绝双页时，说的话必须和做的事一致。** 曾经那条提示写「已切回单页」，而代码原封不动把模式留在 `scroll`：用户看到的是「点了没反应，还说切回去了」。拒绝就说「窗口太窄，放不下双页」；真正回退的只有 `resizeEvent()`，它才说「已切回单页」。
+- **滚动条的范围要当场告诉 Qt 内容有多高，不能等它下一轮布局。** 连续滚动模式里，`_relayout()` 先把 bar 设成正确的 `0..总高`，紧接着 Qt 自己的布局把内容控件按**上一份**页数重算高度，`rangeChanged` 打出 `0,0`，bar 从 440 被夹到 0，`_on_scroll` 就把页码改成了 2——重开一本滚到第 8 页的漫画，落在第 2 页且再也回不去。修法是 `self._content.setMinimumHeight(running)`，在 `_sync_scroll_range()` 之前把高度钉住。
 
 ---
 

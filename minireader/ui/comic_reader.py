@@ -538,7 +538,7 @@ class ComicReader(Reader, QWidget):
     def mode(self) -> str:
         return self._mode
 
-    def set_mode(self, mode: str) -> None:
+    def set_mode(self, mode: str, *, quiet: bool = False) -> None:
         """Switch reading mode.
 
         Switching modes carries the *page*, not the pixel offset. Going A -> B
@@ -555,6 +555,11 @@ class ComicReader(Reader, QWidget):
         rather than in the caller so that **every** caller - the button, the
         settings dialog, a restored preference, a saved Progress - gets the same
         answer.
+
+        `quiet=True` mutes that one sentence and nothing else: a caller restoring
+        a saved `Progress` has nobody to explain itself to - the user did not just
+        ask for a mode, the last session did. The answer (refuse, keep the old
+        mode) stays identical, so the rule above still holds.
         """
         if mode not in READING_MODES:
             mode = READING_MODES[0]
@@ -572,12 +577,39 @@ class ComicReader(Reader, QWidget):
         if mode == self._mode:
             return
         if mode == "spread" and not self._spread_fits():
-            self.notice.emit("窗口太窄，已切回单页")
+            if not quiet:
+                # Not "已切回单页": this path changes nothing, so a mode that was
+                # `scroll` stays `scroll`. Claiming a fallback that did not happen
+                # is what made a narrow window look stuck (the button kept saying
+                # "已切回单页" while the icon never moved). `resizeEvent()` really
+                # does fall back, and it really does say so.
+                self.notice.emit("窗口太窄，放不下双页")
             return
         self._mode = mode
         self._stack.setCurrentWidget(self._mode_widget())
         self._render()
         self.viewportChanged.emit()
+
+    def restore_mode(self, mode: str) -> None:
+        """Re-apply a mode that was saved for this book, without the lecture.
+
+        Separate from `set_mode()` for two reasons, both about the difference
+        between "the user just asked" and "the last session left this here":
+
+        * nothing is said when the window is too narrow - see `set_mode(quiet=)`;
+        * a saved `spread` on a portrait window lands on `single` instead of
+          leaving whatever the previous book happened to use. `resizeEvent()`
+          makes the same choice for the same reason, and a reader that restored
+          `scroll` merely because `spread` was refused would be a third answer.
+
+        An empty or unknown value means "nothing was saved" and is ignored, so
+        callers can pass `Progress.mode` straight through.
+        """
+        if not mode or mode not in IMPLEMENTED_MODES:
+            return
+        if mode == "spread" and not self._spread_fits():
+            mode = "single"
+        self.set_mode(mode, quiet=True)
 
     def _mode_widget(self) -> QWidget:
         if self._mode == "scroll":

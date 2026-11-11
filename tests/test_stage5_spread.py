@@ -811,6 +811,65 @@ class TestSpreadModePortraitGuard(unittest.TestCase):
             reader.stop()
             reader.deleteLater()
 
+    def test_a_refused_mode_does_not_claim_a_fallback_that_did_not_happen(self) -> None:
+        """窄窗拒绝双页时说的话必须和做的事一致。
+
+        这条守的是一个实测到的死锁：从连续滚动点模式按钮，模式被拒，提示却写
+        "已切回单页"——而代码原封不动地把模式留在 `scroll`，按钮图标也一直是
+        `scroll` 的。用户看到的是"点了没反应，还说切回去了"。
+        """
+        reader = self._reader(600, 900)
+        try:
+            reader.set_mode("scroll")
+            seen: list[str] = []
+            reader.notice.connect(seen.append)
+            reader.set_mode("spread")
+            self.assertEqual(reader.mode, "scroll", "拒绝就是不改，别假装改了")
+            self.assertEqual(len(seen), 1)
+            self.assertIn("太窄", seen[0])
+            self.assertNotIn("已切回单页", seen[0])
+        finally:
+            reader.stop()
+            reader.deleteLater()
+
+    def test_restoring_a_mode_says_nothing(self) -> None:
+        """恢复上次的模式是替上一场会话办事，不是回答用户，所以不该弹提示。"""
+        wide = self._reader(1200, 800)
+        try:
+            seen: list[str] = []
+            wide.notice.connect(seen.append)
+            wide.restore_mode("scroll")
+            self.assertEqual(wide.mode, "scroll")
+            self.assertEqual(seen, [])
+        finally:
+            wide.stop()
+            wide.deleteLater()
+
+    def test_restoring_spread_on_a_portrait_window_lands_on_single(self) -> None:
+        """竖窗里存下的双页落到单页，而不是留在上一本书碰巧用的模式。"""
+        reader = self._reader(600, 900)
+        try:
+            reader.set_mode("scroll")
+            seen: list[str] = []
+            reader.notice.connect(seen.append)
+            reader.restore_mode("spread")
+            self.assertEqual(reader.mode, "single")
+            self.assertEqual(seen, [], "安静回落")
+        finally:
+            reader.stop()
+            reader.deleteLater()
+
+    def test_restoring_an_empty_mode_is_a_no_op(self) -> None:
+        """旧存档里 mode 是空串，`restore_mode()` 必须当作"没存过"。"""
+        reader = self._reader(1200, 800)
+        try:
+            reader.set_mode("scroll")
+            reader.restore_mode("")
+            self.assertEqual(reader.mode, "scroll", "空串不该把模式打回 single")
+        finally:
+            reader.stop()
+            reader.deleteLater()
+
     def test_the_page_survives_the_fallback(self) -> None:
         reader = self._reader(1200, 800)
         try:
@@ -969,6 +1028,67 @@ class TestWindowSpreadMode(SpreadWindowTestCase):
         again._comic_reader.set_mode("spread")
         pump()
         self.assertEqual(again.chapter_index, expected)
+
+    def test_cycling_the_mode_writes_it_without_a_page_turn(self) -> None:
+        """切模式这个动作本身就要落盘。
+
+        以前只有翻页、滚动这类路径会顺带写一次 `Progress.mode`，于是"切到双页、
+        关掉、重开"的模式记忆是空的——用户看到的就是"切了没记住"。这条测试
+        不调 `persist_progress()`，只点按钮。
+        """
+        window = self.make_window(path=self.cbz_path)
+        window.resize(1200, 800)
+        pump()
+        window.cycle_comic_mode()  # single -> scroll
+        pump()
+        window.cycle_comic_mode()  # scroll -> spread
+        pump()
+        self.assertEqual(window._comic_reader.mode, "spread")
+        self.assertEqual(self.progress.get(window.book.id).mode, "spread")
+
+    def test_confirming_the_settings_does_not_reset_the_mode(self) -> None:
+        """改字号之类的设置不该把用户在标题栏选的模式打回默认值。
+
+        `apply_comic_settings()` 挂在每一次 `apply_preferences()` 上：只要无条件
+        重推 `comic_default_mode`，用户切到双页后去设置里点一下"确定"就会
+        莫名其妙回到单页。
+        """
+        window = self._spread_window()
+        self.assertEqual(window._comic_reader.mode, "spread")
+        self.settings.font_size = 30
+        window.apply_preferences()
+        pump()
+        self.assertEqual(window._comic_reader.mode, "spread", "改设置不该动模式")
+
+    def test_editing_the_default_mode_does_move_the_reader(self) -> None:
+        """反过来说：设置里真的改了"阅读模式"，就得生效。"""
+        window = self.make_window(path=self.cbz_path)
+        window.resize(1200, 800)
+        pump()
+        self.assertEqual(window._comic_reader.mode, "single")
+        self.settings.comic_default_mode = "scroll"
+        window.apply_preferences()
+        pump()
+        self.assertEqual(window._comic_reader.mode, "scroll")
+
+    def test_the_saved_mode_is_restored_on_reopen(self) -> None:
+        """重开一本漫画要回到上次看的模式，而不是回到默认值。"""
+        window = self.make_window(path=self.cbz_path)
+        window.resize(1200, 800)
+        pump()
+        for _ in range(2):  # single -> scroll -> spread，走用户真正走的按钮
+            window.cycle_comic_mode()
+            pump()
+        self.assertEqual(window._comic_reader.mode, "spread")
+        self.assertEqual(self.progress.get(window.book.id).mode, "spread")
+
+        again = self.make_window()
+        again.resize(1200, 800)
+        pump()
+        self.assertEqual(again._comic_reader.mode, "single", "开书前还是默认值")
+        again.load_path(self.cbz_path)
+        pump()
+        self.assertEqual(again._comic_reader.mode, "spread", "开书后要装回存下的模式")
 
     def test_the_edge_resize_filter_follows_the_mode(self) -> None:
         window = self.make_window(path=self.cbz_path)

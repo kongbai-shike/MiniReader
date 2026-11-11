@@ -756,6 +756,12 @@ class MiniWindow(QWidget):
         # 必须在 `_build_ui()` **之前**就有初值——`_build_ui()` 里构造 ComicReader
         # 时会接上 `viewportChanged`，而 `apply_comic_settings()` 可能在构造期就切
         # 模式，那时 `_rebind_reader_views()` 已经会被调用。
+        # 上一次真正推给 reader 的 `comic_default_mode`。`apply_comic_settings()` 会
+        # 在每次 `apply_preferences()` 里跑（改字号、换主题、调透明度都算），而把默认
+        # 模式无条件重推一遍的代价是：用户刚在标题栏切到双页，去设置里点一下「确定」，
+        # 模式就被打回默认值。记住推过什么，才知道"这次的默认值和上次一样"意味着
+        # 用户不是在要求换模式。
+        self._pushed_comic_mode = None
         self._filtered_viewport = None
         self._autoscroll_bar = None
         self.autoscroller = None
@@ -1894,9 +1900,16 @@ class MiniWindow(QWidget):
         # `set_mode()` also refuses `spread` on a portrait window (the reader decides,
         # so every caller gets the same answer), which is exactly the behaviour wanted
         # here: a saved preference does not fight the window's shape.
+        #
+        # Pushed only when the preference itself changed. This method runs on every
+        # `apply_preferences()` - i.e. every time the settings dialog is confirmed,
+        # even for a font-size tweak - and re-pushing a value the user has already
+        # overridden from the title bar would silently undo that choice. The reader
+        # keeps its mode; only an actual edit of "阅读模式" moves it.
         mode = getattr(settings, "comic_default_mode", "single")
-        if mode in self._comic_reader.IMPLEMENTED_MODES:
+        if mode in self._comic_reader.IMPLEMENTED_MODES and mode != self._pushed_comic_mode:
             self._comic_reader.set_mode(mode)
+            self._pushed_comic_mode = mode
         self._sync_comic_buttons()
 
     def sync_tray(self) -> None:
@@ -2048,6 +2061,7 @@ class MiniWindow(QWidget):
             # no book on screen means no reader menu, so there would be no way left
             # to change the answer back.
             self._remember_pdf_kind(book.id, answer)
+        mode = None
         if chapter is None and offset is None:
             saved = self.progress.get(book.id)
             if book.kind == KIND_COMIC:
@@ -2056,9 +2070,12 @@ class MiniWindow(QWidget):
                 # 被当成"已读到某处"。
                 if saved.page:
                     chapter = saved.page
+                # 阅读模式和页码一样属于"这本书读到哪儿"。空串是旧记录的常态
+                # （切模式不落盘的那段时期的存档），restore_mode() 会忽略它。
+                mode = saved.mode
             elif saved.chapter or saved.offset:
                 chapter, offset = saved.chapter, saved.offset
-        self.set_book(book, chapter=chapter, offset=offset)
+        self.set_book(book, chapter=chapter, offset=offset, mode=mode)
         return True
 
     def _pdf_preference(self, path) -> str | None:
@@ -2158,12 +2175,24 @@ class MiniWindow(QWidget):
         self.progress.put(book_id_value, record)
         self.progress.save()
 
-    def set_book(self, book, *, chapter: int | None = None, offset: int | None = None) -> None:
+    def set_book(
+        self,
+        book,
+        *,
+        chapter: int | None = None,
+        offset: int | None = None,
+        mode: str | None = None,
+    ) -> None:
         self.book = book
         self.chapter_index = book.clamp(chapter if chapter is not None else 0)
         # 先选 Reader 再显示：漫画要读的是页码而不是像素偏移，两件事必须发生在
         # show_chapter() 之前，否则第一帧会用错的控件渲染错的坐标。
         self._select_reader(book.kind)
+        # 阅读模式也得在第一帧之前装回去：先按单页渲染一次再跳双页，是一次可见
+        # 的闪烁，还白白解码一遍。竖窗里存下的双页由 restore_mode() 自己降级。
+        if mode and book.kind == KIND_COMIC:
+            self._comic_reader.restore_mode(mode)
+            self._sync_comic_buttons()
         self.show_chapter(offset=offset or 0)
         self.title_label.setText(book.title)
         self.title_label.setToolTip(f"{book.title}\n{book.describe()}")
@@ -2283,9 +2312,17 @@ class MiniWindow(QWidget):
         self.comic_binding_button.setToolTip(reader.binding_tip())
 
     def cycle_comic_mode(self) -> None:
+        """切一档阅读模式，并立刻落盘。
+
+        `current_progress()` 一直带着 `mode`，但只有翻页、滚动之类的路径会顺带
+        写一次；切模式这个动作本身从来不写。于是切到双页、关掉、重开，模式又
+        回到默认值。`persist_progress()` 放在这里才是"切了就记住"的保证——不能
+        指望后面某次翻页帮忙兜底，因为用户可能再也不翻。
+        """
         self._comic_reader.cycle_mode()
         self._sync_comic_buttons()
         self._update_status()
+        self.persist_progress()
 
     def cycle_comic_binding(self) -> None:
         """翻一下装订方向。`cycle_binding()` 记的是"本书覆盖"，不是改设置。

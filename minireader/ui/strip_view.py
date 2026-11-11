@@ -265,6 +265,14 @@ class StripView(QScrollArea):
             offsets.append(running)
             running += height
         self._offsets = offsets
+        # Tell Qt how tall the content is *now*, not on its next layout pass.
+        # Without this the range is stated correctly by `_sync_scroll_range()`
+        # and then collapsed to `(0, 0)` one event-loop turn later, because the
+        # content widget is still sized for the previous page count (or for no
+        # pages at all). A bar sitting at page 200 gets clamped to 0 by that
+        # collapse and never comes back: measured, reopening a book at page 8
+        # landed on page 2, and the strip quietly reported the wrong page.
+        self._content.setMinimumHeight(running)
         self._sync_scroll_range()
 
     def _sync_scroll_range(self) -> None:
