@@ -8,6 +8,7 @@ __pycache__/
 build/
 dist/
 dist-onefile/
+dist-*/
 
 # ---- 运行时数据 ----
 logs/
